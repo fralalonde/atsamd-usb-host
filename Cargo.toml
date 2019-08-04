@@ -1,0 +1,30 @@
+[package]
+name = "atsamd-usb-host"
+description = "usb-host driver support for Atmel SAMD* microcontrollers."
+version = "0.1.0"
+authors = ["Brian Cully <bjc@kublai.com>"]
+edition = "2018"
+license = "LGPL-3.0-or-later"
+categories = ["no-std", "embedded", "hardware-support"]
+keywords = ["usb", "usb-host", "hal", "peripheral"]
+repository = "https://github.com/bjc/atsamd-21-host.git"
+readme = "README.md"
+
+[dependencies]
+usb-host = "~0.1"
+starb = "~0.1"
+log = "~0.4"
+embedded-hal = "~0.2"
+atsamd-hal = "~0.6"
+
+[dev-dependencies]
+bootkbd = "~0.1"
+clint = "~0.2"
+cortex-m = "~0.6"
+cortex-m-rt = "~0.6"
+nb = "~0.1"
+trinket_m0 = "~0.4"
+
+[patch.crates-io]
+atsamd-hal = { git = "https://github.com/atsamd-rs/atsamd", rev = "97d55c19" }
+trinket_m0 = { git = "https://github.com/atsamd-rs/atsamd", rev = "97d55c19" }
