@@ -49,7 +49,7 @@ impl<W> WriteWrapper<W>
 where
     W: serial::Write<u8>,
 {
-    pub const fn new(writer: W) -> Self {
+    pub fn new(writer: W) -> Self {
         Self { w: writer }
     }
 }

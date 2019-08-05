@@ -1,8 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(const_fn)]
-#![feature(const_transmute)]
-#![allow(dead_code)]
 
 mod logger;
 mod macros;
