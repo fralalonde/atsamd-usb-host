@@ -1,3 +1,5 @@
+//! USB Host driver implementation for SAMD* series chips.
+
 #![no_std]
 mod pipe;
 

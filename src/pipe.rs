@@ -27,7 +27,7 @@ use atsamd_hal::target_device::usb::{
     host::{BINTERVAL, PCFG, PINTFLAG, PSTATUS, PSTATUSCLR, PSTATUSSET},
 };
 use core::convert::TryInto;
-use log::trace;
+use log::{trace, warn};
 
 // Maximum time to wait for a control request with data to finish. cf
 // §9.2.6.1 of USB 2.0.
@@ -309,8 +309,8 @@ impl Pipe<'_, '_> {
         // the status bit is set, set it again? if it's clear then
         // clear it? This is what I get for having to work from
         // Arduino sources.
-        trace!(
-            "~~~ tok: {:?}, dtgl: {}, i: {}, o: {}",
+        warn!(
+            "tok: {:?}, dtgl: {}, i: {}, o: {}",
             token,
             self.regs.status.read().dtgl().bit(),
             ep.in_toggle(),
@@ -329,6 +329,8 @@ impl Pipe<'_, '_> {
                 ep.set_out_toggle(t);
                 t
             }
+
+            PToken::Setup => false,
 
             _ => !self.regs.status.read().dtgl().bit_is_set(),
         };
@@ -372,10 +374,11 @@ impl Pipe<'_, '_> {
             let res = self.dispatch_result(token);
             match res {
                 Ok(true) => {
+                    // Swap sequence bits on successful transfer.
                     if token == PToken::In {
-                        ep.set_in_toggle(self.regs.status.read().dtgl().bit_is_set());
+                        ep.set_in_toggle(!ep.in_toggle());
                     } else if token == PToken::Out {
-                        ep.set_out_toggle(self.regs.status.read().dtgl().bit_is_set());
+                        ep.set_out_toggle(!ep.out_toggle());
                     }
                     return Ok(());
                 }
