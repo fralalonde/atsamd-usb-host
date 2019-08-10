@@ -107,6 +107,26 @@ impl PipeTable {
             w.pdaddr().set_addr(endpoint.address());
             w.pepnum().set_epnum(endpoint.endpoint_num())
         });
+        pdesc.bank0.pcksize.write(|w| {
+            let mps = endpoint.max_packet_size();
+            if mps >= 1023 {
+                w.size().bytes1024()
+            } else if mps >= 512 {
+                w.size().bytes512()
+            } else if mps >= 256 {
+                w.size().bytes256()
+            } else if mps >= 128 {
+                w.size().bytes128()
+            } else if mps >= 64 {
+                w.size().bytes64()
+            } else if mps >= 32 {
+                w.size().bytes32()
+            } else if mps >= 16 {
+                w.size().bytes16()
+            } else {
+                w.size().bytes8()
+            }
+        });
         Pipe {
             num: i,
             regs: pregs,
@@ -175,7 +195,7 @@ impl Pipe<'_, '_> {
          */
         // TODO: status stage has up to 50ms to complete. cf §9.2.6.4
         // of USB 2.0.
-        self.desc.bank0.pcksize.write(|w| {
+        self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(0) };
             unsafe { w.multi_packet_size().bits(0) }
         });
@@ -206,7 +226,7 @@ impl Pipe<'_, '_> {
             .addr
             .write(|w| unsafe { w.addr().bits(buf.ptr as u32) });
         // configure packet size PCKSIZE.SIZE
-        self.desc.bank0.pcksize.write(|w| {
+        self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(buf.len as u16) };
             unsafe { w.multi_packet_size().bits(0) }
         });
@@ -225,7 +245,7 @@ impl Pipe<'_, '_> {
         let packet_size = 8;
 
         trace!("p{}: Should IN for {}b.", self.num, buf.len());
-        self.desc.bank0.pcksize.write(|w| {
+        self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(buf.len() as u16) };
             unsafe { w.multi_packet_size().bits(0) }
         });
@@ -283,7 +303,7 @@ impl Pipe<'_, '_> {
         millis: &dyn Fn() -> usize,
     ) -> Result<usize, PipeErr> {
         trace!("p{}: Should OUT for {}b.", self.num, buf.len());
-        self.desc.bank0.pcksize.write(|w| {
+        self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(buf.len() as u16) };
             unsafe { w.multi_packet_size().bits(0) }
         });
