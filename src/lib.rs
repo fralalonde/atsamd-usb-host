@@ -33,9 +33,6 @@ type EventWriter = Writer<'static, Event>;
 
 const NAK_LIMIT: usize = 15;
 
-// Must be at least 100ms. cf §9.1.2 of USB 2.0.
-const SETTLE_DELAY: usize = 205; // Delay in sec/1024
-
 // Ring buffer for sharing events from interrupt context.
 static mut EVENTS: Events = Events::new(Event::Error);
 
@@ -48,7 +45,7 @@ enum DetachedState {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum AttachedState {
-    WaitForSettle(usize),
+    ResetBus,
     WaitResetComplete,
     WaitSOF(usize),
 }
@@ -226,7 +223,6 @@ where
         }
 
         self.usb.host().intenset.write(|w| {
-            w.wakeup().set_bit();
             w.dconn().set_bit();
             w.ddisc().set_bit()
         });
@@ -255,9 +251,7 @@ where
                 }
                 Event::Attached => {
                     if let TaskState::Detached(_) = self.task_state {
-                        TaskState::Attached(AttachedState::WaitForSettle(
-                            (self.millis)() + SETTLE_DELAY,
-                        ))
+                        TaskState::Attached(AttachedState::ResetBus)
                     } else {
                         self.task_state
                     }
@@ -316,11 +310,9 @@ where
 
     fn attached_fsm(&mut self, s: AttachedState) {
         match s {
-            AttachedState::WaitForSettle(until) => {
-                if (self.millis)() >= until {
-                    self.usb.host().ctrlb.modify(|_, w| w.busreset().set_bit());
-                    self.task_state = TaskState::Attached(AttachedState::WaitResetComplete);
-                }
+            AttachedState::ResetBus => {
+                self.usb.host().ctrlb.modify(|_, w| w.busreset().set_bit());
+                self.task_state = TaskState::Attached(AttachedState::WaitResetComplete);
             }
 
             AttachedState::WaitResetComplete => {
@@ -378,7 +370,12 @@ where
 
     fn configure_dev(&mut self, drivers: &mut [&mut dyn Driver]) -> Result<(), TransferError> {
         let none: Option<&mut [u8]> = None;
+        let max_packet_size: u16 = match self.usb.host().status.read().speed().bits() {
+            0x0 => 64,
+            _ => 8,
+        };
         let mut a0ep0 = Addr0EP0 {
+            max_packet_size: max_packet_size,
             in_toggle: true,
             out_toggle: true,
         };
@@ -435,6 +432,7 @@ where
 }
 
 struct Addr0EP0 {
+    max_packet_size: u16,
     in_toggle: bool,
     out_toggle: bool,
 }
@@ -456,7 +454,7 @@ impl Endpoint for Addr0EP0 {
     }
 
     fn max_packet_size(&self) -> u16 {
-        8
+        self.max_packet_size
     }
 
     fn in_toggle(&self) -> bool {
@@ -488,61 +486,14 @@ pub fn handler(usbp: usize, events: &mut EventWriter) {
         }
     };
 
-    if flags.hsof().bit_is_set() {
-        trace!(" +hsof");
-        usb.host().intflag.write(|w| w.hsof().set_bit());
-        unshift_event(Event::Attached);
-    }
-
-    if flags.rst().bit_is_set() {
-        // We seem to get this whenever a device attaches/detaches.
-        trace!(" +rst");
-        usb.host().intflag.write(|w| w.rst().set_bit());
-        unshift_event(Event::Detached);
-    }
-
-    if flags.uprsm().bit_is_set() {
-        trace!(" +uprsm");
-        usb.host().intflag.write(|w| w.uprsm().set_bit());
-        unshift_event(Event::Detached);
-    }
-
-    if flags.dnrsm().bit_is_set() {
-        trace!(" +dnrsm");
-        usb.host().intflag.write(|w| w.dnrsm().set_bit());
-        unshift_event(Event::Detached);
-    }
-
-    if flags.wakeup().bit_is_set() {
-        // §32.8.5.8 - since VBUSOK is set, then this happens when a
-        // device is connected.
-        trace!(" +wakeup");
-        usb.host().intflag.write(|w| w.wakeup().set_bit());
-        unshift_event(Event::Attached);
-    }
-
-    if flags.ramacer().bit_is_set() {
-        trace!(" +ramacer");
-        usb.host().intflag.write(|w| w.ramacer().set_bit());
-        unshift_event(Event::Detached);
-    }
-
     if flags.dconn().bit_is_set() {
         trace!(" +dconn");
-        usb.host().intflag.write(|w| w.dconn().set_bit());
-        usb.host().intenclr.write(|w| w.dconn().set_bit());
-        usb.host().intflag.write(|w| w.ddisc().set_bit());
-        usb.host().intenset.write(|w| w.ddisc().set_bit());
         usb.host().intflag.write(|w| w.dconn().set_bit());
         unshift_event(Event::Attached);
     }
 
     if flags.ddisc().bit_is_set() {
         trace!(" +ddisc");
-        usb.host().intflag.write(|w| w.ddisc().set_bit());
-        usb.host().intenclr.write(|w| w.ddisc().set_bit());
-        usb.host().intflag.write(|w| w.dconn().set_bit());
-        usb.host().intenset.write(|w| w.dconn().set_bit());
         usb.host().intflag.write(|w| w.ddisc().set_bit());
         unshift_event(Event::Detached);
     }

@@ -420,8 +420,6 @@ impl Pipe<'_, '_> {
                             naks += 1;
                             if naks > retries {
                                 break;
-                            } else {
-                                self.dispatch_packet(ep, token);
                             }
                         }
                     }
@@ -481,27 +479,23 @@ impl Pipe<'_, '_> {
         if self.is_transfer_complete(token)? {
             self.regs.statusset.write(|w| w.pfreeze().set_bit());
             Ok(true)
-        } else if self.regs.intflag.read().trfail().bit_is_set() {
-            self.regs.intflag.write(|w| w.trfail().set_bit());
-            trace!("trfail");
-            self.regs.statusset.write(|w| w.pfreeze().set_bit());
-            self.log_regs();
-            Err(PipeErr::TransferFail)
         } else if self.desc.bank0.status_bk.read().errorflow().bit_is_set() {
             trace!("errorflow");
-            self.regs.statusset.write(|w| w.pfreeze().set_bit());
             self.log_regs();
             Err(PipeErr::Flow)
         } else if self.desc.bank0.status_pipe.read().touter().bit_is_set() {
             trace!("touter");
-            self.regs.statusset.write(|w| w.pfreeze().set_bit());
             self.log_regs();
             Err(PipeErr::HWTimeout)
         } else if self.desc.bank0.status_pipe.read().dtgler().bit_is_set() {
             trace!("dtgler");
-            self.regs.statusset.write(|w| w.pfreeze().set_bit());
             self.log_regs();
             Err(PipeErr::DataToggle)
+        } else if self.regs.intflag.read().trfail().bit_is_set() {
+            self.regs.intflag.write(|w| w.trfail().set_bit());
+            trace!("trfail");
+            self.log_regs();
+            Err(PipeErr::TransferFail)
         } else {
             // Nothing wrong, but not done yet.
             Ok(false)

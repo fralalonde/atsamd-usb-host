@@ -28,6 +28,16 @@ impl CtrlPipe {
         f(&mut w);
         self.0 = w.bits;
     }
+
+    pub fn modify<F>(&mut self, f: F)
+    where
+        for<'w> F: FnOnce(&R, &'w mut W) -> &'w mut W,
+    {
+        let r = R { bits: self.0 };
+        let mut w = W { bits: self.0 };
+        f(&r, &mut w);
+        self.0 = w.bits;
+    }
 }
 
 impl From<u16> for CtrlPipe {
