@@ -396,6 +396,7 @@ where
                     if let Err(e) = d.tick((self.millis)(), self) {
                         warn!("running driver {:?}: {:?}", d, e);
                         if let DriverError::Permanent(a, _) = e {
+                            d.remove_device(a);
                             self.devices.remove(a);
                         }
                     }
