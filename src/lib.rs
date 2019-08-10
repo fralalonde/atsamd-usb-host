@@ -38,9 +38,6 @@ const SETTLE_DELAY: usize = 205; // Delay in sec/1024
 
 // Ring buffer for sharing events from interrupt context.
 static mut EVENTS: Events = Events::new(Event::Error);
-// FIXME: this is just for testing. The enum needs to be
-// thread-safe if this is the way we're going.
-static mut LATEST_EVENT: Event = Event::Detached;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DetachedState {
@@ -243,33 +240,30 @@ where
     }
 
     pub fn task(&mut self, drivers: &mut [&mut dyn Driver]) {
-        static mut LAST_EVENT: Event = Event::Error;
-        unsafe {
-            if LAST_EVENT != LATEST_EVENT {
-                trace!("new event: {:?}", LATEST_EVENT);
-            }
-        }
-
         static mut LAST_TASK_STATE: TaskState = TaskState::Detached(DetachedState::Illegal);
-        self.task_state = match unsafe { LATEST_EVENT } {
-            Event::Error => TaskState::Detached(DetachedState::Illegal),
-            Event::Detached => {
-                if let TaskState::Detached(_) = self.task_state {
-                    self.task_state
-                } else {
-                    TaskState::Detached(DetachedState::Initialize)
+
+        if let Some(event) = self.events.shift() {
+            trace!("Found event: {:?}", event);
+            self.task_state = match event {
+                Event::Error => TaskState::Detached(DetachedState::Illegal),
+                Event::Detached => {
+                    if let TaskState::Detached(_) = self.task_state {
+                        self.task_state
+                    } else {
+                        TaskState::Detached(DetachedState::Initialize)
+                    }
                 }
-            }
-            Event::Attached => {
-                if let TaskState::Detached(_) = self.task_state {
-                    TaskState::Attached(AttachedState::WaitForSettle(
-                        (self.millis)() + SETTLE_DELAY,
-                    ))
-                } else {
-                    self.task_state
+                Event::Attached => {
+                    if let TaskState::Detached(_) = self.task_state {
+                        TaskState::Attached(AttachedState::WaitForSettle(
+                            (self.millis)() + SETTLE_DELAY,
+                        ))
+                    } else {
+                        self.task_state
+                    }
                 }
-            }
-        };
+            };
+        }
 
         static mut LAST_CBITS: u16 = 0;
         static mut LAST_FLAGS: u16 = 0;
@@ -290,34 +284,9 @@ where
             LAST_TASK_STATE = self.task_state
         };
 
-        if let Some(_event) = self.events.shift() {
-            // trace!("Found event: {:?}", event);
-            // self.task_state = match event {
-            //     Event::None => TaskState::Detached(DetachedState::Illegal),
-            //     Event::Detached => {
-            //         if let TaskState::Detached(_) = self.task_state {
-            //             self.task_state
-            //         } else {
-            //             TaskState::Detached(DetachedState::Initialize)
-            //         }
-            //     }
-            //     Event::Attached => {
-            //         if let TaskState::Detached(_) = self.task_state {
-            //             self.delay = self.millis() + SETTLE_DELAY;
-            //             TaskState::Attached(AttachedState::WaitForSettle)
-            //         } else {
-            //             self.task_state
-            //         }
-            //     }
-            // };
-        }
-
         self.fsm(drivers);
-
-        unsafe {
-            LAST_EVENT = LATEST_EVENT;
-        }
     }
+
     fn fsm(&mut self, drivers: &mut [&mut dyn Driver]) {
         // respond to events from interrupt.
         match self.task_state {
@@ -514,9 +483,8 @@ pub fn handler(usbp: usize, events: &mut EventWriter) {
     trace!("USB - {:x}", flags.bits());
 
     let mut unshift_event = |e: Event| {
-        unsafe { LATEST_EVENT = e };
-        if let Err(_) = events.unshift(e) {
-            error!("Couldn't write USB event to queue.");
+        if let Err(e) = events.unshift(e) {
+            error!("Couldn't write USB event to queue: {:?}", e);
         }
     };
 
