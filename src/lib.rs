@@ -34,7 +34,7 @@ type EventWriter = Writer<'static, Event>;
 const NAK_LIMIT: usize = 15;
 
 // Ring buffer for sharing events from interrupt context.
-static mut EVENTS: Events = Events::new(Event::Error);
+static mut EVENTS: Events = Events::new();
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DetachedState {

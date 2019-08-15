@@ -36,7 +36,7 @@ impl fmt::Write for JoinedRingBuffer<'_> {
     }
 }
 
-static mut LB: RingBuffer<u8> = RingBuffer::<u8>::new(0);
+static mut LB: RingBuffer<u8> = RingBuffer::<u8>::new();
 static mut JRB: JoinedRingBuffer = unsafe { JoinedRingBuffer::new(&LB) };
 
 // The UART isn't necessarily Sync, so wrap it in something that
