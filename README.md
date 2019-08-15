@@ -1,5 +1,8 @@
 # atsamd-usb-host
 
+[![Documentation](https://docs.rs/atsamd-usb-host/badge.svg)](https://docs.rs/atsamd-usb-host)
+[![Testing](https://api.travis-ci.org/repos/bjc/atsamd-usb-host.svg?branch=master)](https://travis-ci.org/bjc/atsamd-usb-host)
+
 This is a [usb-host](https://github.com/bjc/usb-host) driver for
 Atmel's SAMD series of chips.
 
