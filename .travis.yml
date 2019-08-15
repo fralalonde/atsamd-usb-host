@@ -1,4 +1,7 @@
 language: rust
+script:
+  - rustup target add thumbv7em-none-eabihf
+  - cargo build --target thumbv7em-none-eabihf --features samd21e18a
 rust:
   - stable
   - beta
