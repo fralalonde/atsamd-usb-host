@@ -40,6 +40,7 @@ const MAX_PIPES: usize = 8;
 const NAK_LIMIT: usize = 15;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[allow(unused)]
 pub(crate) enum PipeErr {
     ShortPacket,
     InvalidPipe,
