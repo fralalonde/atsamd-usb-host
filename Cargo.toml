@@ -15,10 +15,11 @@ usb-host = "~0.1"
 starb = "~0.2"
 log = "~0.4"
 embedded-hal = "~0.2"
-atsamd-hal = "~0.5"
+atsamd-hal = "~0.6"
 
-[patch.crates-io]
-atsamd-hal = { git = "https://github.com/atsamd-rs/atsamd.git", rev = "d1872cf" }
+[dev-dependencies.atsamd-hal]
+version = "~0.6"
+features = ["samd21e18a"]
 
 # Need to re-export features from atsamd-hal. If there were a
 # compelling reason to merge this into there, this is it.
