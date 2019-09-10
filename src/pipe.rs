@@ -76,7 +76,7 @@ impl PipeTable {
 
             unsafe { core::mem::transmute(tbl) }
         };
-        Self { tbl: tbl }
+        Self { tbl }
     }
 
     pub(crate) fn pipe_for<'a, 'b>(
@@ -144,6 +144,7 @@ pub(crate) struct Pipe<'a, 'b> {
     pub(crate) desc: &'a mut PipeDesc,
 }
 impl Pipe<'_, '_> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn control_transfer(
         &mut self,
         ep: &mut dyn Endpoint,
@@ -159,10 +160,10 @@ impl Pipe<'_, '_> {
          */
         let buflen = buf.as_ref().map_or(0, |b| b.len() as u16);
         let mut setup_packet = SetupPacket {
-            bm_request_type: bm_request_type,
-            b_request: b_request,
-            w_value: w_value,
-            w_index: w_index,
+            bm_request_type,
+            b_request,
+            w_value,
+            w_index,
             w_length: buflen,
         };
         self.send(

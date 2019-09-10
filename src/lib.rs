@@ -82,7 +82,7 @@ impl DeviceTable {
             unsafe { mem::transmute(devs) }
         };
 
-        Self { tbl: tbl }
+        Self { tbl }
     }
 
     /// Allocate a device with the next available address.
@@ -101,8 +101,7 @@ impl DeviceTable {
 
     /// Remove the device at address `addr`.
     fn remove(&mut self, addr: u8) -> Option<Device> {
-        let v = core::mem::replace(&mut self.tbl[addr as usize], None);
-        v
+        core::mem::replace(&mut self.tbl[addr as usize], None)
     }
 }
 
@@ -136,6 +135,7 @@ impl<'a, F> SAMDHost<'a, F>
 where
     F: Fn() -> usize,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         usb: USB,
         sof_pin: gpio::Pa23<Input<Floating>>,
@@ -150,7 +150,7 @@ where
         let (eventr, mut eventw) = unsafe { EVENTS.split() };
 
         let mut rc = Self {
-            usb: usb,
+            usb,
 
             events: eventr,
             task_state: TaskState::Detached(DetachedState::Initialize),
@@ -164,7 +164,7 @@ where
             _dp_pad: dp_pin.into_function_g(port),
             host_enable_pin: None,
 
-            millis: millis,
+            millis,
         };
 
         if let Some(he_pin) = host_enable_pin {
@@ -375,7 +375,7 @@ where
             _ => 8,
         };
         let mut a0ep0 = Addr0EP0 {
-            max_packet_size: max_packet_size,
+            max_packet_size,
             in_toggle: true,
             out_toggle: true,
         };

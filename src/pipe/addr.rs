@@ -17,7 +17,7 @@ pub struct W {
 }
 
 impl Addr {
-    pub fn read(&self) -> R {
+    pub fn read(self) -> R {
         R { bits: self.0 }
     }
 
@@ -89,7 +89,7 @@ impl<'a> AddrW<'a> {
     pub unsafe fn bits(self, v: u32) -> &'a mut W {
         // Address must be 32-bit aligned. cf §32.8.7.2 of SAMD21 data
         // sheet.
-        assert!((v & 0x3) == 0);
+        debug_assert!(v.trailing_zeros() >= 2);
         self.w.bits = v;
         self.w
     }

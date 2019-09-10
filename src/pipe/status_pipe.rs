@@ -15,7 +15,7 @@ pub(crate) struct W {
 }
 
 impl StatusPipe {
-    pub fn read(&self) -> R {
+    pub fn read(self) -> R {
         R { bits: self.0 }
     }
 

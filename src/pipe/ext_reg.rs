@@ -17,7 +17,7 @@ pub(crate) struct W {
 }
 
 impl ExtReg {
-    pub fn read(&self) -> R {
+    pub fn read(self) -> R {
         R { bits: self.0 }
     }
 

@@ -17,7 +17,7 @@ pub(crate) struct W {
 }
 
 impl PckSize {
-    pub fn read(&self) -> R {
+    pub fn read(self) -> R {
         R { bits: self.0 }
     }
 
@@ -137,8 +137,8 @@ pub(crate) enum SizeR {
 }
 
 impl SizeR {
-    pub fn bits(&self) -> u8 {
-        match *self {
+    pub fn bits(self) -> u8 {
+        match self {
             Self::Bytes8 => 0x0,
             Self::Bytes16 => 0x1,
             Self::Bytes32 => 0x2,
@@ -150,29 +150,29 @@ impl SizeR {
         }
     }
 
-    fn is_bytes8(&self) -> bool {
-        *self == Self::Bytes8
+    fn is_bytes8(self) -> bool {
+        self == Self::Bytes8
     }
-    fn is_bytes16(&self) -> bool {
-        *self == Self::Bytes16
+    fn is_bytes16(self) -> bool {
+        self == Self::Bytes16
     }
-    fn is_bytes32(&self) -> bool {
-        *self == Self::Bytes32
+    fn is_bytes32(self) -> bool {
+        self == Self::Bytes32
     }
-    fn is_bytes64(&self) -> bool {
-        *self == Self::Bytes64
+    fn is_bytes64(self) -> bool {
+        self == Self::Bytes64
     }
-    fn is_bytes128(&self) -> bool {
-        *self == Self::Bytes128
+    fn is_bytes128(self) -> bool {
+        self == Self::Bytes128
     }
-    fn is_bytes256(&self) -> bool {
-        *self == Self::Bytes256
+    fn is_bytes256(self) -> bool {
+        self == Self::Bytes256
     }
-    fn is_bytes512(&self) -> bool {
-        *self == Self::Bytes512
+    fn is_bytes512(self) -> bool {
+        self == Self::Bytes512
     }
-    fn is_bytes1024(&self) -> bool {
-        *self == Self::Bytes1024
+    fn is_bytes1024(self) -> bool {
+        self == Self::Bytes1024
     }
 }
 
@@ -281,8 +281,8 @@ pub(crate) enum SizeW {
     Bytes1024,
 }
 impl SizeW {
-    pub fn bits(&self) -> u8 {
-        match *self {
+    pub fn bits(self) -> u8 {
+        match self {
             Self::Bytes8 => 0,
             Self::Bytes16 => 1,
             Self::Bytes32 => 2,
@@ -303,8 +303,8 @@ impl<'a> _SizeW<'a> {
     pub unsafe fn bits(self, v: u8) -> &'a mut W {
         const POS: u8 = 28;
         const MASK: u8 = 0x7;
-        self.w.bits &= !((MASK as u32) << POS);
-        self.w.bits |= ((v & MASK) as u32) << POS;
+        self.w.bits &= !(u32::from(MASK) << POS);
+        self.w.bits |= u32::from(v & MASK) << POS;
         self.w
     }
 
@@ -354,8 +354,8 @@ impl<'a> MultiPacketSizeW<'a> {
 
         const POS: u8 = 14;
         const MASK: u16 = 0x3fff;
-        self.w.bits &= !((MASK as u32) << POS);
-        self.w.bits |= ((v & MASK) as u32) << POS;
+        self.w.bits &= !(u32::from(MASK) << POS);
+        self.w.bits |= u32::from(v & MASK) << POS;
         self.w
     }
 }
@@ -371,8 +371,8 @@ impl<'a> ByteCountW<'a> {
 
         const POS: u8 = 0;
         const MASK: u16 = 0x3fff;
-        self.w.bits &= !((MASK as u32) << POS);
-        self.w.bits |= ((v & MASK) as u32) << POS;
+        self.w.bits &= !(u32::from(MASK) << POS);
+        self.w.bits |= u32::from(v & MASK) << POS;
         self.w
     }
 }

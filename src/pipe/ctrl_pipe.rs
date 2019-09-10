@@ -16,7 +16,7 @@ pub struct W {
 }
 
 impl CtrlPipe {
-    pub fn read(&self) -> R {
+    pub fn read(self) -> R {
         R { bits: self.0 }
     }
 
@@ -142,8 +142,8 @@ impl<'a> PErMaxW<'a> {
     pub unsafe fn bits(self, v: u8) -> &'a mut W {
         const POS: u8 = 12;
         const MASK: u8 = 0xf;
-        self.w.bits &= !((MASK as u16) << POS);
-        self.w.bits |= ((v & MASK) as u16) << POS;
+        self.w.bits &= !(u16::from(MASK) << POS);
+        self.w.bits |= u16::from(v & MASK) << POS;
         self.w
     }
 
@@ -159,8 +159,8 @@ impl<'a> PEpNumW<'a> {
     pub unsafe fn bits(self, v: u8) -> &'a mut W {
         const POS: u8 = 8;
         const MASK: u8 = 0xf;
-        self.w.bits &= !((MASK as u16) << POS);
-        self.w.bits |= ((v & MASK) as u16) << POS;
+        self.w.bits &= !(u16::from(MASK) << POS);
+        self.w.bits |= u16::from(v & MASK) << POS;
         self.w
     }
 
@@ -176,8 +176,8 @@ impl<'a> PDAddrW<'a> {
     pub unsafe fn bits(self, v: u8) -> &'a mut W {
         const POS: u8 = 0;
         const MASK: u8 = 0x3f;
-        self.w.bits &= !((MASK as u16) << POS);
-        self.w.bits |= ((v & MASK) as u16) << POS;
+        self.w.bits &= !(u16::from(MASK) << POS);
+        self.w.bits |= u16::from(v & MASK) << POS;
         self.w
     }
 
