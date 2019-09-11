@@ -121,27 +121,44 @@ pub struct SAMDHost<'a, F> {
 
     devices: DeviceTable,
 
-    // need sof 1kHz pad?
-    _sof_pad: gpio::Pa23<gpio::PfG>,
     _dm_pad: gpio::Pa24<gpio::PfG>,
     _dp_pad: gpio::Pa25<gpio::PfG>,
+    _sof_pad: Option<gpio::Pa23<gpio::PfG>>,
     host_enable_pin: Option<gpio::Pa28<Output<OpenDrain>>>,
 
     // To get current milliseconds.
     millis: &'a F,
 }
 
+pub struct Pins {
+    dm_pin: gpio::Pa24<Input<Floating>>,
+    dp_pin: gpio::Pa25<Input<Floating>>,
+    sof_pin: Option<gpio::Pa23<Input<Floating>>>,
+    host_enable_pin: Option<gpio::Pa28<Input<Floating>>>,
+}
+impl Pins {
+    pub fn new(
+        dm_pin: gpio::Pa24<Input<Floating>>,
+        dp_pin: gpio::Pa25<Input<Floating>>,
+        sof_pin: Option<gpio::Pa23<Input<Floating>>>,
+        host_enable_pin: Option<gpio::Pa28<Input<Floating>>>,
+    ) -> Self {
+        Self {
+            dm_pin,
+            dp_pin,
+            sof_pin,
+            host_enable_pin,
+        }
+    }
+}
+
 impl<'a, F> SAMDHost<'a, F>
 where
     F: Fn() -> usize,
 {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         usb: USB,
-        sof_pin: gpio::Pa23<Input<Floating>>,
-        dm_pin: gpio::Pa24<Input<Floating>>,
-        dp_pin: gpio::Pa25<Input<Floating>>,
-        host_enable_pin: Option<gpio::Pa28<Input<Floating>>>,
+        pins: Pins,
         port: &mut gpio::Port,
         clocks: &mut GenericClockController,
         pm: &mut PM,
@@ -149,7 +166,7 @@ where
     ) -> (Self, impl FnMut()) {
         let (eventr, mut eventw) = unsafe { EVENTS.split() };
 
-        let mut rc = Self {
+        let rc = Self {
             usb,
 
             events: eventr,
@@ -159,17 +176,13 @@ where
 
             devices: DeviceTable::new(),
 
-            _sof_pad: sof_pin.into_function_g(port),
-            _dm_pad: dm_pin.into_function_g(port),
-            _dp_pad: dp_pin.into_function_g(port),
-            host_enable_pin: None,
+            _dm_pad: pins.dm_pin.into_function_g(port),
+            _dp_pad: pins.dp_pin.into_function_g(port),
+            _sof_pad: pins.sof_pin.map(|p| p.into_function_g(port)),
+            host_enable_pin: pins.host_enable_pin.map(|p| p.into_open_drain_output(port)),
 
             millis,
         };
-
-        if let Some(he_pin) = host_enable_pin {
-            rc.host_enable_pin = Some(he_pin.into_open_drain_output(port));
-        }
 
         pm.apbbmask.modify(|_, w| w.usb_().set_bit());
 

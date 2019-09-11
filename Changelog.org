@@ -1,0 +1,5 @@
+* Since 0.1.0
+  - use `Pins` struct to hold USB pin information used by `new`.
+  - Both `sof_pin` and `host_enable_pin` are now optional. SAMD51G
+    MCUs share the SOF pin with the I²C clock pin, so it may not
+    always be available.
