@@ -1,58 +1,22 @@
+use super::register::{Readable, Register, Writable, R as GenR, W as GenW};
+
 /// § 32.8.7.3
 /// Packet Size.
 ///
 /// Offset: 0x04 & 0x14
 /// Reset: 0xxxxxxxxx
 /// Property: NA
-#[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
-pub(crate) struct PckSize(u32);
 
-pub(crate) struct R {
-    bits: u32,
-}
+pub type PckSize = Register<u32, _PckSize>;
+impl Readable for PckSize {}
+impl Writable for PckSize {}
 
-pub(crate) struct W {
-    bits: u32,
-}
+pub type R = GenR<u32, PckSize>;
+pub type W = GenW<u32, PckSize>;
 
-impl PckSize {
-    pub fn read(self) -> R {
-        R { bits: self.0 }
-    }
-
-    pub fn write<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut W) -> &mut W,
-    {
-        let mut w = W { bits: self.0 };
-        f(&mut w);
-        self.0 = w.bits;
-    }
-
-    pub fn modify<F>(&mut self, f: F)
-    where
-        for<'w> F: FnOnce(&R, &'w mut W) -> &'w mut W,
-    {
-        let r = R { bits: self.0 };
-        let mut w = W { bits: self.0 };
-        f(&r, &mut w);
-        self.0 = w.bits;
-    }
-}
-
-impl From<u32> for PckSize {
-    fn from(v: u32) -> Self {
-        Self(v)
-    }
-}
+pub struct _PckSize;
 
 impl R {
-    /// Value in raw bits.
-    pub fn bits(&self) -> u32 {
-        self.bits
-    }
-
     pub fn auto_zlp(&self) -> AutoZLPR {
         let bits = {
             const POS: u8 = 31;
@@ -104,7 +68,7 @@ impl R {
 /// When enabled, the USB module will manage the ZLP handshake by
 /// hardware. This bit is for OUT pipes only. When disabled the
 /// handshake should be managed by firmware.
-pub(crate) struct AutoZLPR(bool);
+pub struct AutoZLPR(bool);
 impl AutoZLPR {
     pub fn bit(&self) -> bool {
         self.0
@@ -125,7 +89,7 @@ impl AutoZLPR {
 ///
 /// These bits are cleared upon sending a USB reset.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum SizeR {
+pub enum SizeR {
     Bytes8,
     Bytes16,
     Bytes32,
@@ -204,7 +168,7 @@ impl From<u8> for SizeR {
 /// For OUT pipes, MULTI_PACKET_SIZE holds the total data size for the
 /// complete transfer. This value must be a multiple of the maximum
 /// packet size.
-pub(crate) struct MultiPacketSizeR(u16);
+pub struct MultiPacketSizeR(u16);
 impl MultiPacketSizeR {
     pub fn bits(&self) -> u16 {
         self.0
@@ -217,7 +181,7 @@ impl MultiPacketSizeR {
 /// sent in the last OUT or SETUP transaction for an OUT pipe, or of
 /// the number of bytes to be received in the next IN transaction for
 /// an input pipe.
-pub(crate) struct ByteCountR(u16);
+pub struct ByteCountR(u16);
 impl ByteCountR {
     pub fn bits(&self) -> u16 {
         self.0
@@ -225,12 +189,6 @@ impl ByteCountR {
 }
 
 impl W {
-    /// Write raw bits.
-    pub unsafe fn bits(&mut self, v: u32) -> &mut Self {
-        self.bits = v;
-        self
-    }
-
     pub fn auto_zlp(&mut self) -> AutoZLPW {
         AutoZLPW { w: self }
     }
@@ -248,7 +206,7 @@ impl W {
     }
 }
 
-pub(crate) struct AutoZLPW<'a> {
+pub struct AutoZLPW<'a> {
     w: &'a mut W,
 }
 impl<'a> AutoZLPW<'a> {
@@ -270,7 +228,7 @@ impl<'a> AutoZLPW<'a> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum SizeW {
+pub enum SizeW {
     Bytes8,
     Bytes16,
     Bytes32,
@@ -296,7 +254,7 @@ impl SizeW {
 }
 
 /// Proxy for `SizeW`
-pub(crate) struct _SizeW<'a> {
+pub struct _SizeW<'a> {
     w: &'a mut W,
 }
 impl<'a> _SizeW<'a> {
@@ -345,7 +303,7 @@ impl<'a> _SizeW<'a> {
     }
 }
 
-pub(crate) struct MultiPacketSizeW<'a> {
+pub struct MultiPacketSizeW<'a> {
     w: &'a mut W,
 }
 impl<'a> MultiPacketSizeW<'a> {
@@ -360,7 +318,7 @@ impl<'a> MultiPacketSizeW<'a> {
     }
 }
 
-pub(crate) struct ByteCountW<'a> {
+pub struct ByteCountW<'a> {
     w: &'a mut W,
 }
 impl<'a> ByteCountW<'a> {

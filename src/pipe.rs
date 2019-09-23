@@ -6,6 +6,7 @@ pub mod ctrl_pipe;
 pub mod ext_reg;
 #[allow(unused)]
 pub mod pck_size;
+pub mod register;
 #[allow(unused)]
 pub mod status_bk;
 #[allow(unused)]
@@ -728,7 +729,7 @@ impl PipeDesc {
     }
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 // 16 bytes per bank.
 pub(crate) struct BankDesc {
     pub addr: Addr,

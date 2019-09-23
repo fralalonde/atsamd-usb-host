@@ -1,48 +1,21 @@
+use super::register::{Readable, Register, Writable, R as GenR, W as GenW};
+
 /// §32.8.7.4
 /// Extended Register.
 ///
 /// Offset: 0x08
 /// Reset: 0xxxxxxxx
 /// Property: NA
-#[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
-pub(crate) struct ExtReg(u16);
+pub type ExtReg = Register<u16, _ExtReg>;
+impl Readable for ExtReg {}
+impl Writable for ExtReg {}
 
-pub(crate) struct R {
-    bits: u16,
-}
+pub type R = GenR<u16, ExtReg>;
+pub type W = GenW<u16, ExtReg>;
 
-pub(crate) struct W {
-    bits: u16,
-}
-
-impl ExtReg {
-    pub fn read(self) -> R {
-        R { bits: self.0 }
-    }
-
-    pub fn write<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut W) -> &mut W,
-    {
-        let mut w = W { bits: self.0 };
-        f(&mut w);
-        self.0 = w.bits;
-    }
-}
-
-impl From<u16> for ExtReg {
-    fn from(v: u16) -> Self {
-        Self(v)
-    }
-}
+pub struct _ExtReg;
 
 impl R {
-    /// Value in raw bits.
-    pub fn bits(&self) -> u16 {
-        self.bits
-    }
-
     pub fn variable(&self) -> VariableR {
         let bits = {
             const POS: u8 = 4;
@@ -89,7 +62,7 @@ impl R {
 /// in the reference document ENGINEERING CHANGE NOTICE, USB 2.0 Link
 /// Power Management Addendum" and "Table X-X1 in Errata for ECN USB
 /// 2.0 Link Power Management.
-pub(crate) struct VariableR(u16);
+pub struct VariableR(u16);
 impl VariableR {
     pub fn bits(&self) -> u16 {
         self.0
@@ -107,7 +80,7 @@ impl VariableR {
 /// field should be set as described in “Table 2.2 SubPID Types in the
 /// reference document ENGINEERING CHANGE NOTICE, USB 2.0 Link Power
 /// Management Addendum”.
-pub(crate) struct SubPIDR(u8);
+pub struct SubPIDR(u8);
 impl SubPIDR {
     pub fn bits(&self) -> u8 {
         self.0
@@ -115,12 +88,6 @@ impl SubPIDR {
 }
 
 impl W {
-    /// Write raw bits.
-    pub unsafe fn bits(&mut self, v: u16) -> &mut Self {
-        self.bits = v;
-        self
-    }
-
     pub fn variable(&mut self) -> VariableW {
         VariableW { w: self }
     }
@@ -129,7 +96,7 @@ impl W {
     }
 }
 
-pub(crate) struct VariableW<'a> {
+pub struct VariableW<'a> {
     w: &'a mut W,
 }
 impl<'a> VariableW<'a> {
@@ -142,7 +109,7 @@ impl<'a> VariableW<'a> {
     }
 }
 
-pub(crate) struct SubPIDW<'a> {
+pub struct SubPIDW<'a> {
     w: &'a mut W,
 }
 impl<'a> SubPIDW<'a> {

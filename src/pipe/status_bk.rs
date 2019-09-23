@@ -1,48 +1,22 @@
+use super::register::{Readable, Register, Writable, R as GenR, W as GenW};
+
 /// §32.8.7.5
 /// Host Status Bank.
 ///
 /// Offset: 0x0a & 0x1a
 /// Reset: 0xxxxxxx
 /// Property: NA
-#[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
-pub(crate) struct StatusBk(u8);
 
-pub(crate) struct R {
-    bits: u8,
-}
+pub type StatusBk = Register<u8, _StatusBk>;
+impl Readable for StatusBk {}
+impl Writable for StatusBk {}
 
-pub(crate) struct W {
-    bits: u8,
-}
+pub type R = GenR<u8, StatusBk>;
+pub type W = GenW<u8, StatusBk>;
 
-impl StatusBk {
-    pub fn read(self) -> R {
-        R { bits: self.0 }
-    }
-
-    pub fn write<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut W) -> &mut W,
-    {
-        let mut w = W { bits: self.0 };
-        f(&mut w);
-        self.0 = w.bits;
-    }
-}
-
-impl From<u8> for StatusBk {
-    fn from(v: u8) -> Self {
-        Self(v)
-    }
-}
+pub struct _StatusBk;
 
 impl R {
-    /// Value in raw bits.
-    pub fn bits(&self) -> u8 {
-        self.bits
-    }
-
     pub fn errorflow(&self) -> ErrorFlowR {
         let bits = {
             const POS: u8 = 1;
@@ -75,7 +49,7 @@ impl R {
 /// transfer, a NAK handshake has been received. For Isochronous IN
 /// transfer, an overrun condition has occurred. For Isochronous OUT
 /// transfer, an underflow condition has occurred.
-pub(crate) struct ErrorFlowR(bool);
+pub struct ErrorFlowR(bool);
 impl ErrorFlowR {
     pub fn bit(&self) -> bool {
         self.0
@@ -96,7 +70,7 @@ impl ErrorFlowR {
 ///
 /// This bit is set when a CRC error has been detected in an
 /// isochronous IN endpoint bank.
-pub(crate) struct CRCErrR(bool);
+pub struct CRCErrR(bool);
 impl CRCErrR {
     pub fn bit(&self) -> bool {
         self.0
@@ -112,12 +86,6 @@ impl CRCErrR {
 }
 
 impl W {
-    /// Write raw bits.
-    pub unsafe fn bits(&mut self, v: u8) -> &mut Self {
-        self.bits = v;
-        self
-    }
-
     pub fn errorflow(&mut self) -> ErrorFlowW {
         ErrorFlowW { w: self }
     }
@@ -127,7 +95,7 @@ impl W {
     }
 }
 
-pub(crate) struct ErrorFlowW<'a> {
+pub struct ErrorFlowW<'a> {
     w: &'a mut W,
 }
 impl<'a> ErrorFlowW<'a> {
@@ -148,7 +116,7 @@ impl<'a> ErrorFlowW<'a> {
     }
 }
 
-pub(crate) struct CRCErrW<'a> {
+pub struct CRCErrW<'a> {
     w: &'a mut W,
 }
 impl<'a> CRCErrW<'a> {

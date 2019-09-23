@@ -1,57 +1,20 @@
+use super::register::{Readable, Register, Writable, R as GenR, W as GenW};
+
 /// Host Control Pipe.
 ///
 /// Offset: 0x0c
 /// Reset: 0xXXXX
 /// Property: PAC Write-Protection, Write-Synchronized, Read-Synchronized
-#[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
-pub struct CtrlPipe(u16);
+pub type CtrlPipe = Register<u16, _CtrlPipe>;
+impl Readable for CtrlPipe {}
+impl Writable for CtrlPipe {}
 
-pub struct R {
-    bits: u16,
-}
+pub type R = GenR<u16, CtrlPipe>;
+pub type W = GenW<u16, CtrlPipe>;
 
-pub struct W {
-    bits: u16,
-}
-
-impl CtrlPipe {
-    pub fn read(self) -> R {
-        R { bits: self.0 }
-    }
-
-    pub fn write<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut W) -> &mut W,
-    {
-        let mut w = W { bits: self.0 };
-        f(&mut w);
-        self.0 = w.bits;
-    }
-
-    pub fn modify<F>(&mut self, f: F)
-    where
-        for<'w> F: FnOnce(&R, &'w mut W) -> &'w mut W,
-    {
-        let r = R { bits: self.0 };
-        let mut w = W { bits: self.0 };
-        f(&r, &mut w);
-        self.0 = w.bits;
-    }
-}
-
-impl From<u16> for CtrlPipe {
-    fn from(v: u16) -> Self {
-        Self(v)
-    }
-}
+pub struct _CtrlPipe;
 
 impl R {
-    /// Value in raw bits.
-    pub fn bits(&self) -> u16 {
-        self.bits
-    }
-
     pub fn permax(&self) -> PErMaxR {
         let bits = {
             const POS: u8 = 12;
@@ -115,13 +78,6 @@ impl PDAddrR {
 }
 
 impl W {
-    /// Write raw bits.
-
-    pub unsafe fn bits(&mut self, v: u16) -> &mut Self {
-        self.bits = v;
-        self
-    }
-
     pub fn permax(&mut self) -> PErMaxW {
         PErMaxW { w: self }
     }

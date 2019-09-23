@@ -1,46 +1,20 @@
+use super::register::{Readable, Register, Writable, R as GenR, W as GenW};
+
 /// Host Status Pipe.
 ///
 /// Offset: 0x0e & 0x1e
 /// Reset: 0xxxxxx
 /// Property: PAC Write-Protection, Write-Synchronized, Read-Synchronized
-#[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
-pub(crate) struct StatusPipe(u8);
 
-pub(crate) struct R {
-    bits: u8,
-}
-pub(crate) struct W {
-    bits: u8,
-}
+pub type StatusPipe = Register<u8, _StatusPipe>;
+impl Readable for StatusPipe {}
+impl Writable for StatusPipe {}
 
-impl StatusPipe {
-    pub fn read(self) -> R {
-        R { bits: self.0 }
-    }
+pub type R = GenR<u8, StatusPipe>;
+pub type W = GenW<u8, StatusPipe>;
 
-    pub fn write<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut W) -> &mut W,
-    {
-        let mut w = W { bits: self.0 };
-        f(&mut w);
-        self.0 = w.bits;
-    }
-}
-
-impl From<u8> for StatusPipe {
-    fn from(v: u8) -> Self {
-        Self(v)
-    }
-}
-
+pub struct _StatusPipe;
 impl R {
-    /// Value in raw bits.
-    pub fn bits(&self) -> u8 {
-        self.bits
-    }
-
     pub fn ercnt(&self) -> ErCntR {
         let bits = {
             const POS: u8 = 5;
@@ -109,7 +83,7 @@ impl R {
 /// Pipe Error Counter
 ///
 /// The number of errors detected on the pipe.
-pub(crate) struct ErCntR(u8);
+pub struct ErCntR(u8);
 impl ErCntR {
     pub fn bits(&self) -> u8 {
         self.0
@@ -122,7 +96,7 @@ impl ErCntR {
 ///
 /// This bit is set when a CRC 16 error has been detected during a IN
 /// transactions.
-pub(crate) struct CRC16ErR(bool);
+pub struct CRC16ErR(bool);
 impl CRC16ErR {
     pub fn bit(&self) -> bool {
         self.0
@@ -143,7 +117,7 @@ impl CRC16ErR {
 ///
 /// This bit is set when a Time Out error has been detected during a
 /// USB transaction.
-pub(crate) struct TOutErrR(bool);
+pub struct TOutErrR(bool);
 impl TOutErrR {
     pub fn bit(&self) -> bool {
         self.0
@@ -164,7 +138,7 @@ impl TOutErrR {
 ///
 /// This bit is set when a PID error has been detected during a USB
 /// transaction.
-pub(crate) struct PIDErR(bool);
+pub struct PIDErR(bool);
 impl PIDErR {
     pub fn bit(&self) -> bool {
         self.0
@@ -185,7 +159,7 @@ impl PIDErR {
 ///
 /// This bit is set when a Data PID error has been detected during a
 /// USB transaction.
-pub(crate) struct DaPIDErR(bool);
+pub struct DaPIDErR(bool);
 impl DaPIDErR {
     pub fn bit(&self) -> bool {
         self.0
@@ -205,7 +179,7 @@ impl DaPIDErR {
 /// This bit defines the Data Toggle Error Status.
 ///
 /// This bit is set when a Data Toggle Error has been detected.
-pub(crate) struct DTglErR(bool);
+pub struct DTglErR(bool);
 impl DTglErR {
     pub fn bit(&self) -> bool {
         self.0
@@ -221,12 +195,6 @@ impl DTglErR {
 }
 
 impl W {
-    /// Write raw bits.
-    pub unsafe fn bits(&mut self, v: u8) -> &mut Self {
-        self.bits = v;
-        self
-    }
-
     pub fn ercnt(&mut self) -> ErCntW {
         ErCntW { w: self }
     }
@@ -255,7 +223,7 @@ impl W {
 /// Pipe Error Counter
 ///
 /// The number of errors detected on the pipe.
-pub(crate) struct ErCntW<'a> {
+pub struct ErCntW<'a> {
     w: &'a mut W,
 }
 impl<'a> ErCntW<'a> {
@@ -278,7 +246,7 @@ impl<'a> ErCntW<'a> {
 ///
 /// This bit is set when a CRC 16 error has been detected during a IN
 /// transactions.
-pub(crate) struct CRC16ErW<'a> {
+pub struct CRC16ErW<'a> {
     w: &'a mut W,
 }
 impl<'a> CRC16ErW<'a> {
@@ -305,7 +273,7 @@ impl<'a> CRC16ErW<'a> {
 ///
 /// This bit is set when a Time Out error has been detected during a
 /// USB transaction.
-pub(crate) struct TOutErW<'a> {
+pub struct TOutErW<'a> {
     w: &'a mut W,
 }
 impl<'a> TOutErW<'a> {
@@ -332,7 +300,7 @@ impl<'a> TOutErW<'a> {
 ///
 /// This bit is set when a PID error has been detected during a USB
 /// transaction.
-pub(crate) struct PIDErW<'a> {
+pub struct PIDErW<'a> {
     w: &'a mut W,
 }
 impl<'a> PIDErW<'a> {
@@ -359,7 +327,7 @@ impl<'a> PIDErW<'a> {
 ///
 /// This bit is set when a Data PID error has been detected during a
 /// USB transaction.
-pub(crate) struct DaPIDErW<'a> {
+pub struct DaPIDErW<'a> {
     w: &'a mut W,
 }
 impl<'a> DaPIDErW<'a> {
@@ -385,7 +353,7 @@ impl<'a> DaPIDErW<'a> {
 /// This bit defines the Data Toggle Error Status.
 ///
 /// This bit is set when a Data Toggle Error has been detected.
-pub(crate) struct DTglErW<'a> {
+pub struct DTglErW<'a> {
     w: &'a mut W,
 }
 impl<'a> DTglErW<'a> {

@@ -16,6 +16,7 @@ starb = "~0.3"
 log = "~0.4"
 embedded-hal = "~0.2"
 atsamd-hal = "~0.7"
+vcell = "~0.1"
 
 [dev-dependencies.atsamd-hal]
 version = "~0.7"
