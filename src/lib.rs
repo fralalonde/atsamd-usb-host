@@ -18,7 +18,7 @@ use atsamd_hal::{
     target_device::{PM, USB},
 };
 use embedded_hal::digital::v2::OutputPin;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use starb::{Reader, RingBuffer, Writer};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -448,6 +448,7 @@ where
         // it.
         for d in &mut drivers[..] {
             if d.want_device(&dev_desc) {
+                info!("{:?} will take address {}.", d, addr);
                 let res = d.add_device(dev_desc, addr);
                 match res {
                     Ok(_) => return Ok(()),
