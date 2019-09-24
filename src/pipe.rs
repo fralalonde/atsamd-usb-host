@@ -540,14 +540,6 @@ impl Pipe<'_, '_> {
         let bin = self.regs.binterval.read().bits();
         let sts = self.regs.status.read().bits();
         let ifl = self.regs.intflag.read().bits();
-        trace!(
-            "p{}: cfg: {:x}, bin: {:x}, sts: {:x}, ifl: {:x}",
-            self.num,
-            cfg,
-            bin,
-            sts,
-            ifl
-        );
 
         // Pipe RAM regs
         let adr = self.desc.bank0.addr.read().bits();
@@ -557,8 +549,12 @@ impl Pipe<'_, '_> {
         let hcp = self.desc.bank0.ctrl_pipe.read().bits();
         let spi = self.desc.bank0.status_pipe.read().bits();
         trace!(
-            "p{}: adr: {:x}, pks: {:x}, ext: {:x}, sbk: {:x}, hcp: {:x}, spi: {:x}",
+            "p{}:\n\tcfg: {:x}, bin: {:x}, sts: {:x}, ifl: {:x}\n\tadr: {:x}, pks: {:x}, ext: {:x}, sbk: {:x}, hcp: {:x}, spi: {:x}",
             self.num,
+            cfg,
+            bin,
+            sts,
+            ifl,
             adr,
             pks,
             ext,
