@@ -54,7 +54,7 @@ enum AttachedState {
 enum SteadyState {
     Configuring,
     Running,
-    Error,
+    ErrorUntil(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,6 +66,10 @@ enum TaskState {
 
 use core::mem::{self, MaybeUninit};
 use core::ptr;
+
+/// How long to wait after a permanent error before resetting the
+/// host.
+const ERROR_RESET_DELAY: usize = 200;
 
 const MAX_DEVICES: usize = 4;
 struct DeviceTable {
@@ -360,7 +364,9 @@ where
                     Ok(_) => TaskState::Steady(SteadyState::Running),
                     Err(e) => {
                         warn!("Enumeration error: {:?}", e);
-                        TaskState::Steady(SteadyState::Error)
+                        TaskState::Steady(SteadyState::ErrorUntil(
+                            (self.millis)() + ERROR_RESET_DELAY,
+                        ))
                     }
                 }
             }
@@ -372,12 +378,21 @@ where
                         if let DriverError::Permanent(a, _) = e {
                             d.remove_device(a);
                             self.devices.remove(a);
+                            self.task_state = TaskState::Steady(SteadyState::ErrorUntil(
+                                (self.millis)() + ERROR_RESET_DELAY,
+                            ))
                         }
                     }
                 }
             }
 
-            SteadyState::Error => {}
+            // TODO: this is too heavy-handed: resetting the whole
+            // device when only one may be a problem.
+            SteadyState::ErrorUntil(when) => {
+                if (self.millis)() >= when {
+                    self.task_state = TaskState::Detached(DetachedState::Initialize);
+                }
+            }
         }
     }
 
