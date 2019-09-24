@@ -244,8 +244,7 @@ impl Pipe<'_, '_> {
         nak_limit: usize,
         millis: &dyn Fn() -> usize,
     ) -> Result<usize, PipeErr> {
-        // TODO: pull this from pipe descriptor for this addr/ep.
-        let packet_size = 8;
+        let packet_size = ep.max_packet_size() as isize;
 
         trace!("p{}: Should IN for {}b.", self.num, buf.len());
         self.desc.bank0.pcksize.modify(|_, w| {
