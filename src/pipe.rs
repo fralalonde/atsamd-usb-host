@@ -385,42 +385,45 @@ impl Pipe<'_, '_> {
         self.regs
             .cfg
             .modify(|_, w| unsafe { w.ptoken().bits(token as u8) });
+        self.desc
+            .bank0
+            .status_pipe
+            .write(|w| w.ercnt().set_count(0));
 
         match token {
             PToken::Setup => {
-                self.regs.intflag.write(|w| w.txstp().set_bit());
-                self.regs.statusset.write(|w| w.bk0rdy().set_bit());
-
                 // Toggles should be 1 for host and function's
                 // sequence at end of setup transaction. cf §8.6.1 of
                 // USB 2.0.
                 self.dtgl_clear();
                 ep.set_in_toggle(true);
                 ep.set_out_toggle(true);
+
+                self.regs.intflag.write(|w| w.txstp().set_bit());
+                self.regs.statusset.write(|w| w.bk0rdy().set_bit());
             }
             PToken::In => {
-                self.regs.statusclr.write(|w| w.bk0rdy().set_bit());
                 if ep.in_toggle() {
                     self.dtgl_set();
                 } else {
                     self.dtgl_clear();
                 }
+
+                self.regs.intflag.write(|w| w.trcpt0().set_bit());
+                self.regs.statusclr.write(|w| w.bk0rdy().set_bit())
             }
             PToken::Out => {
-                self.regs.intflag.write(|w| w.trcpt0().set_bit());
-                self.regs.statusset.write(|w| w.bk0rdy().set_bit());
                 if ep.out_toggle() {
                     self.dtgl_set();
                 } else {
                     self.dtgl_clear();
                 }
+
+                self.regs.intflag.write(|w| w.trcpt0().set_bit());
+                self.regs.statusset.write(|w| w.bk0rdy().set_bit())
             }
-            _ => {}
+            _ => panic!("bad token during dispatch"),
         }
-
-        trace!("initial regs");
-        self.log_regs();
-
         self.regs.statusclr.write(|w| w.pfreeze().set_bit());
     }
 
