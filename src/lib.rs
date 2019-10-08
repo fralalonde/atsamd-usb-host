@@ -407,9 +407,9 @@ where
             in_toggle: true,
             out_toggle: true,
         };
-        let mut dev_desc: DeviceDescriptor =
-            unsafe { MaybeUninit::<DeviceDescriptor>::uninit().assume_init() };
-        self.control_transfer(
+
+        let mut dev_desc: MaybeUninit<DeviceDescriptor> = MaybeUninit::uninit();
+        let len = self.control_transfer(
             &mut a0ep0,
             RequestType::from((
                 RequestDirection::DeviceToHost,
@@ -421,6 +421,8 @@ where
             0,
             Some(unsafe { to_slice_mut(&mut dev_desc) }),
         )?;
+        assert!(len == mem::size_of::<DeviceDescriptor>());
+        let dev_desc = unsafe { dev_desc.assume_init() };
 
         trace!(" -- dev_desc: {:?}", dev_desc);
 
