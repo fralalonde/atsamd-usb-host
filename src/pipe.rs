@@ -246,55 +246,51 @@ impl Pipe<'_, '_> {
         millis: &dyn Fn() -> usize,
     ) -> Result<usize, PipeErr> {
         let packet_size = ep.max_packet_size() as isize;
+        let buflen = buf.len() as isize;
 
-        trace!("p{}: Should IN for {}b.", self.num, buf.len());
+        trace!("p{}: Should IN for {}b.", self.num, buflen);
         self.desc.bank0.pcksize.modify(|_, w| {
-            unsafe { w.byte_count().bits(buf.len() as u16) };
+            unsafe { w.byte_count().bits(buflen as u16) };
             unsafe { w.multi_packet_size().bits(0) }
         });
 
         // Read until we get a short packet (indicating that there's
         // nothing left for us in this transaction) or the buffer is
         // full.
-        //
-        // TODO: It is sometimes valid to get a short packet when
-        // variable length data is desired by the driver. cf §5.3.2 of
-        // USB 2.0.
-        let mut bytes_received = 0;
-        while bytes_received < buf.len() {
+        let ptr: *mut u8 = buf.as_mut_ptr();
+        let mut bytes_received = 0isize;
+        loop {
             // Move the buffer pointer forward as we get data.
-            self.desc.bank0.addr.write(|w| unsafe {
-                w.addr()
-                    .bits(buf.as_mut_ptr() as u32 + bytes_received as u32)
-            });
-            self.regs.statusclr.write(|w| w.bk0rdy().set_bit());
-            trace!("--- !!! regs-pre-dispatch !!! ---");
-            self.log_regs();
-
+            self.desc
+                .bank0
+                .addr
+                .write(|w| unsafe { w.addr().bits(ptr.offset(bytes_received) as u32) });
             self.dispatch_retries(ep, PToken::In, nak_limit, millis)?;
-            let recvd = self.desc.bank0.pcksize.read().byte_count().bits() as usize;
+            let recvd = self.desc.bank0.pcksize.read().byte_count().bits() as isize;
             bytes_received += recvd;
-            trace!("!! read {} of {}", bytes_received, buf.len());
-            if recvd < packet_size {
-                break;
-            }
+
+            trace!("p{}: read {} of {}", self.num, bytes_received, buflen);
 
             // Don't allow writing past the buffer.
-            assert!(bytes_received <= buf.len());
+            assert!(bytes_received <= buflen);
+
+            if bytes_received == buflen {
+                break;
+            } else if recvd < packet_size {
+                warn!("p{}: short packet {}/{}.", self.num, recvd, packet_size);
+                break;
+            }
         }
 
         self.regs.statusset.write(|w| w.pfreeze().set_bit());
-        if bytes_received < buf.len() {
+        if bytes_received < buflen {
+            // TODO: It is sometimes valid to get a short packet when
+            // variable length data is desired by the driver. cf
+            // §5.3.2 of USB 2.0.
             self.log_regs();
-            // TODO: honestly, this is probably a panic condition,
-            // since whatever's in DataBuf.ptr is totally
-            // invalid. Alternately, this function should be declared
-            // `unsafe`. OR! Make the function take a mutable slice of
-            // u8, and leave it up to the caller to figure out how to
-            // deal with short packets.
             Err(PipeErr::ShortPacket)
         } else {
-            Ok(bytes_received)
+            Ok(bytes_received as usize)
         }
     }
 
@@ -305,14 +301,15 @@ impl Pipe<'_, '_> {
         nak_limit: usize,
         millis: &dyn Fn() -> usize,
     ) -> Result<usize, PipeErr> {
-        trace!("p{}: Should OUT for {}b.", self.num, buf.len());
+        let buflen = buf.len();
+        trace!("p{}: Should OUT for {}b.", self.num, buflen);
         self.desc.bank0.pcksize.modify(|_, w| {
-            unsafe { w.byte_count().bits(buf.len() as u16) };
+            unsafe { w.byte_count().bits(buflen as u16) };
             unsafe { w.multi_packet_size().bits(0) }
         });
 
         let mut bytes_sent = 0;
-        while bytes_sent < buf.len() {
+        while bytes_sent < buflen {
             self.desc
                 .bank0
                 .addr
@@ -321,7 +318,7 @@ impl Pipe<'_, '_> {
 
             let sent = self.desc.bank0.pcksize.read().byte_count().bits() as usize;
             bytes_sent += sent;
-            trace!("!! wrote {} of {}", bytes_sent, buf.len());
+            trace!("!! wrote {} of {}", bytes_sent, buflen);
         }
 
         Ok(bytes_sent)
