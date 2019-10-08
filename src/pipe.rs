@@ -32,7 +32,8 @@ use log::{trace, warn};
 
 // Maximum time to wait for a control request with data to finish. cf
 // §9.2.6.1 of USB 2.0.
-const USB_TIMEOUT: usize = 5 * 1024; // 5 Seconds
+//const USB_TIMEOUT: usize = 5 * 1024; // 5 Seconds
+const USB_XFER_TIMEOUT: usize = 50;
 
 // samd21 only supports 8 pipes.
 const MAX_PIPES: usize = 8;
@@ -338,12 +339,11 @@ impl Pipe<'_, '_> {
     ) -> Result<(), PipeErr> {
         self.dispatch_packet(ep, token);
 
-        let until = millis() + USB_TIMEOUT;
+        let mut until = millis() + USB_XFER_TIMEOUT;
         let mut last_err = PipeErr::SWTimeout;
-        let mut naks = 0;
-        while millis() < until {
-            let res = self.dispatch_result(token);
-            match res {
+        let mut attempt = 0;
+        while attempt <= retries && millis() < until {
+            match self.dispatch_result(token) {
                 Ok(true) => {
                     // Swap sequence bits on successful transfer.
                     if token == PToken::In {
@@ -351,33 +351,42 @@ impl Pipe<'_, '_> {
                     } else if token == PToken::Out {
                         ep.set_out_toggle(!ep.out_toggle());
                     }
+                    trace!("o");
+                    self.regs.statusset.write(|w| w.pfreeze().set_bit());
                     return Ok(());
                 }
-                Ok(false) => continue,
+
+                Ok(false) => trace!("c"),
 
                 Err(e) => {
+                    attempt += 1;
                     last_err = e;
                     match last_err {
-                        PipeErr::DataToggle => self.dtgl(ep, token),
+                        PipeErr::DataToggle => {
+                            self.dtgl(ep, token);
+                            until = millis() + USB_XFER_TIMEOUT;
+                            self.regs.statusclr.write(|w| w.pfreeze().set_bit());
+                            trace!("d");
+                        }
 
                         // Flow error on interrupt pipes means we got
                         // a NAK, which in this context means there's
                         // no data. cf §32.8.7.5 of SAM D21 data
                         // sheet.
-                        PipeErr::Flow if ep.transfer_type() == TransferType::Interrupt => break,
+                        PipeErr::Flow if ep.transfer_type() == TransferType::Interrupt => {
+                            trace!("f");
+                            break;
+                        }
 
                         PipeErr::Stall => break,
-                        _ => {
-                            naks += 1;
-                            if naks > retries {
-                                break;
-                            }
-                        }
+
+                        _ => trace!("n: {:?} {}/{}", e, attempt, retries),
                     }
                 }
             }
         }
 
+        self.regs.statusset.write(|w| w.pfreeze().set_bit());
         Err(last_err)
     }
 
