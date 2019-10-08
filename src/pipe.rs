@@ -97,12 +97,6 @@ impl PipeTable {
             let ptype = PType::from(endpoint.transfer_type()) as u8;
             unsafe { w.ptype().bits(ptype) }
         });
-        trace!(
-            "setting paddr of pipe {} to {}:{}",
-            i,
-            endpoint.address(),
-            endpoint.endpoint_num()
-        );
         pdesc.bank0.ctrl_pipe.write(|w| {
             w.pdaddr().set_addr(endpoint.address());
             w.pepnum().set_epnum(endpoint.endpoint_num())
