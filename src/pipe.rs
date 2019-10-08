@@ -326,57 +326,6 @@ impl Pipe<'_, '_> {
         Ok(bytes_sent)
     }
 
-    fn dtgl(&mut self, ep: &mut dyn Endpoint, token: PToken) {
-        // TODO: this makes no sense to me, and docs are unclear. If
-        // the status bit is set, set it again? if it's clear then
-        // clear it? This is what I get for having to work from
-        // Arduino sources.
-        warn!(
-            "tok: {:?}, dtgl: {}, i: {}, o: {}",
-            token,
-            self.regs.status.read().dtgl().bit(),
-            ep.in_toggle(),
-            ep.out_toggle(),
-        );
-
-        let toggle = match token {
-            PToken::In => {
-                let t = !ep.in_toggle();
-                ep.set_in_toggle(t);
-                t
-            }
-
-            PToken::Out => {
-                let t = !ep.out_toggle();
-                ep.set_out_toggle(t);
-                t
-            }
-
-            PToken::Setup => false,
-
-            _ => !self.regs.status.read().dtgl().bit_is_set(),
-        };
-
-        if toggle {
-            self.dtgl_set();
-        } else {
-            self.dtgl_clear();
-        }
-    }
-
-    fn dtgl_set(&mut self) {
-        self.regs.statusset.write(|w| w.dtgl().set_bit());
-    }
-
-    fn dtgl_clear(&mut self) {
-        self.regs.statusclr.write(|w| unsafe {
-            // FIXME: need to patch the SVD for
-            // PSTATUSCLR.DTGL at bit0. No? This is in the SVD, but
-            // not the rust output.
-            w.bits(1)
-        });
-    }
-
     // This is the only function that calls `millis`. If we can make
     // this just take the current timestamp, we can make this
     // non-blocking.
@@ -548,7 +497,46 @@ impl Pipe<'_, '_> {
         }
     }
 
+    fn dtgl(&mut self, ep: &mut dyn Endpoint, token: PToken) {
+        // TODO: this makes no sense to me, and docs are unclear. If
+        // the status bit is set, set it again? if it's clear then
+        // clear it? This is what I get for having to work from
+        // Arduino sources.
+        warn!(
+            "tok: {:?}, dtgl: {}, i: {}, o: {}",
+            token,
+            self.regs.status.read().dtgl().bit(),
+            ep.in_toggle(),
+            ep.out_toggle(),
+        );
+
+        // I'm not sure how this is supposed to work, according to the
+        // data sheet, but after much trial and error, this is what
+        // seems to work.
+        let toggle = self.regs.status.read().dtgl().bit_is_set();
+        if token == PToken::In {
+            ep.set_in_toggle(toggle);
+        } else if token == PToken::Out {
+            ep.set_out_toggle(toggle);
         }
+        if toggle {
+            self.dtgl_set();
+        } else {
+            self.dtgl_clear();
+        }
+    }
+
+    fn dtgl_set(&mut self) {
+        self.regs.statusset.write(|w| w.dtgl().set_bit());
+    }
+
+    fn dtgl_clear(&mut self) {
+        self.regs.statusclr.write(|w| unsafe {
+            // FIXME: need to patch the SVD for
+            // PSTATUSCLR.DTGL at bit0. No? This is in the SVD, but
+            // not the rust output.
+            w.bits(1)
+        });
     }
 
     fn log_regs(&self) {
