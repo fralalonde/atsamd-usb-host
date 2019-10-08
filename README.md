@@ -10,7 +10,7 @@ Atmel's SAMD series of chips.
 
 To enable support for your MCU, you need to enable its feature. One
 of: `samd21g18a`, `samd21e18a`, `samd51g19a`, `samd51j19a`,
-`samd51j20a`.
+or `samd51j20a`.
 
 So far this library has been tested on the following boards:
 
