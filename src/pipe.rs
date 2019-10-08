@@ -53,12 +53,9 @@ pub(crate) enum PipeErr {
     HWTimeout,
     DataToggle,
     SWTimeout,
-    Other(&'static str),
-}
-impl From<&'static str> for PipeErr {
-    fn from(v: &'static str) -> Self {
-        Self::Other(v)
-    }
+    PID,
+    DataPID,
+    CRC16,
 }
 
 pub(crate) struct PipeTable {
@@ -182,14 +179,16 @@ impl Pipe<'_, '_> {
         if let Some(b) = buf {
             // TODO: data stage, has up to 5,000ms (in 500ms
             // per-packet chunks) to complete. cf §9.2.6.4 of USB 2.0.
-            match bm_request_type.direction()? {
-                RequestDirection::DeviceToHost => {
+            match bm_request_type.direction() {
+                Ok(RequestDirection::DeviceToHost) => {
                     transfer_len = self.in_transfer(ep, b, NAK_LIMIT, millis)?;
                 }
 
-                RequestDirection::HostToDevice => {
+                Ok(RequestDirection::HostToDevice) => {
                     transfer_len = self.out_transfer(ep, b, NAK_LIMIT, millis)?;
                 }
+
+                Err(_) => Err(PipeErr::PID)?,
             }
         }
 
@@ -203,9 +202,10 @@ impl Pipe<'_, '_> {
             unsafe { w.multi_packet_size().bits(0) }
         });
 
-        let token = match bm_request_type.direction()? {
-            RequestDirection::DeviceToHost => PToken::Out,
-            RequestDirection::HostToDevice => PToken::In,
+        let token = match bm_request_type.direction() {
+            Ok(RequestDirection::DeviceToHost) => PToken::Out,
+            Ok(RequestDirection::HostToDevice) => PToken::In,
+            Err(_) => Err(PipeErr::PID)?,
         };
 
         trace!("dispatching status stage");
@@ -436,8 +436,6 @@ impl Pipe<'_, '_> {
         self.regs
             .cfg
             .modify(|_, w| unsafe { w.ptoken().bits(token as u8) });
-        self.regs.intflag.modify(|_, w| w.trfail().set_bit());
-        self.regs.intflag.modify(|_, w| w.perr().set_bit());
 
         match token {
             PToken::Setup => {
@@ -477,60 +475,79 @@ impl Pipe<'_, '_> {
         self.regs.statusclr.write(|w| w.pfreeze().set_bit());
     }
 
-    fn dispatch_result(&mut self, token: PToken) -> Result<bool, PipeErr> {
-        if self.is_transfer_complete(token)? {
-            self.regs.statusset.write(|w| w.pfreeze().set_bit());
+    fn dispatch_result(&mut self, _token: PToken) -> Result<bool, PipeErr> {
+        let flags = self.regs.intflag.read();
+        if flags.txstp().bit_is_set() {
+            self.regs.intflag.write(|w| w.txstp().set_bit());
             Ok(true)
-        } else if self.desc.bank0.status_bk.read().errorflow().bit_is_set() {
-            trace!("errorflow");
+        } else if flags.trcpt0().bit_is_set() {
+            self.regs.intflag.write(|w| w.trcpt0().set_bit());
+            Ok(true)
+        } else if flags.stall().bit_is_set() {
+            self.regs.intflag.write(|w| w.stall().set_bit());
+            trace!("stall");
             self.log_regs();
-            Err(PipeErr::Flow)
-        } else if self.desc.bank0.status_pipe.read().touter().bit_is_set() {
-            trace!("touter");
-            self.log_regs();
-            Err(PipeErr::HWTimeout)
-        } else if self.desc.bank0.status_pipe.read().dtgler().bit_is_set() {
-            trace!("dtgler");
-            self.log_regs();
-            Err(PipeErr::DataToggle)
-        } else if self.regs.intflag.read().trfail().bit_is_set() {
-            self.regs.intflag.write(|w| w.trfail().set_bit());
-            trace!("trfail");
-            self.log_regs();
-            Err(PipeErr::TransferFail)
+            Err(PipeErr::Stall)
+        } else if flags.trfail().bit_is_set() || flags.perr().bit_is_set() {
+            self.regs.intflag.write(|w| {
+                w.trfail().set_bit();
+                w.perr().set_bit()
+            });
+
+            if self.desc.bank0.status_pipe.read().dtgler().bit_is_set() {
+                self.desc
+                    .bank0
+                    .status_pipe
+                    .write(|w| w.dtgler().clear_bit());
+                trace!("dtgler");
+                self.log_regs();
+                Err(PipeErr::DataToggle)
+            } else if self.desc.bank0.status_bk.read().errorflow().bit_is_set() {
+                self.desc
+                    .bank0
+                    .status_bk
+                    .write(|w| w.errorflow().clear_bit());
+                trace!("errorflow");
+                self.log_regs();
+                Err(PipeErr::Flow)
+            } else if self.desc.bank0.status_pipe.read().touter().bit_is_set() {
+                self.desc
+                    .bank0
+                    .status_pipe
+                    .write(|w| w.touter().clear_bit());
+                trace!("touter");
+                self.log_regs();
+                Err(PipeErr::HWTimeout)
+            } else if self.desc.bank0.status_pipe.read().crc16er().bit_is_set() {
+                self.desc
+                    .bank0
+                    .status_pipe
+                    .write(|w| w.crc16er().clear_bit());
+                trace!("crc16er");
+                self.log_regs();
+                Err(PipeErr::CRC16)
+            } else if self.desc.bank0.status_pipe.read().pider().bit_is_set() {
+                self.desc.bank0.status_pipe.write(|w| w.pider().clear_bit());
+                trace!("pider");
+                self.log_regs();
+                Err(PipeErr::PID)
+            } else if self.desc.bank0.status_pipe.read().dapider().bit_is_set() {
+                self.desc
+                    .bank0
+                    .status_pipe
+                    .write(|w| w.dapider().clear_bit());
+                trace!("dapider");
+                self.log_regs();
+                Err(PipeErr::DataPID)
+            } else {
+                Err(PipeErr::TransferFail)
+            }
         } else {
             // Nothing wrong, but not done yet.
             Ok(false)
         }
     }
 
-    fn is_transfer_complete(&mut self, token: PToken) -> Result<bool, PipeErr> {
-        match token {
-            PToken::Setup => {
-                if self.regs.intflag.read().txstp().bit_is_set() {
-                    self.regs.intflag.write(|w| w.txstp().set_bit());
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            PToken::In => {
-                if self.regs.intflag.read().trcpt0().bit_is_set() {
-                    self.regs.intflag.write(|w| w.trcpt0().set_bit());
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            PToken::Out => {
-                if self.regs.intflag.read().trcpt0().bit_is_set() {
-                    self.regs.intflag.write(|w| w.trcpt0().set_bit());
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            _ => Err(PipeErr::InvalidToken),
         }
     }
 

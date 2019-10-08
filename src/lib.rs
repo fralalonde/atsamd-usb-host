@@ -543,7 +543,10 @@ impl From<PipeErr> for TransferError {
             PipeErr::PipeErr => Self::Permanent("pipe error"),
             PipeErr::HWTimeout => Self::Permanent("hardware timeout"),
             PipeErr::SWTimeout => Self::Permanent("software timeout"),
-            PipeErr::Other(s) => Self::Permanent(s),
+            PipeErr::PID => Self::Permanent("pid error"),
+            PipeErr::DataPID => Self::Permanent("data pid error"),
+            PipeErr::CRC16 => Self::Permanent("crc16 error"),
+            //PipeErr::Other(s) => Self::Permanent(s),
         }
     }
 }
