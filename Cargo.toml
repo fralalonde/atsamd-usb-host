@@ -11,22 +11,31 @@ repository = "https://github.com/bjc/atsamd-21-host.git"
 readme = "README.md"
 
 [dependencies]
-usb-host = "~0.1"
-starb = "~0.3"
-log = "~0.4"
-embedded-hal = "~0.2"
-atsamd-hal = "~0.7"
+usb-host = "0.1"
+starb = "0.3"
+log = "0.4"
+embedded-hal = "0.2"
+atsamd-hal = "0.14"
 
 [dev-dependencies.atsamd-hal]
-version = "~0.7"
-features = ["samd21e18a"]
+version = "0.14"
+features = ["samd21e"]
 
 # Need to re-export features from atsamd-hal. If there were a
 # compelling reason to merge this into there, this is it.
 [features]
-samd21g18a = ["atsamd-hal/samd21g18a"]
-samd21e18a = ["atsamd-hal/samd21e18a"]
-samd51 = ["atsamd-hal/samd51"]
-samd51g19a = ["atsamd-hal/samd51g19a"]
-samd51j19a = ["atsamd-hal/samd51j19a"]
-samd51j20a = ["atsamd-hal/samd51j20a"]
+samd11c = ["atsamd-hal/samd11c"]
+samd21e = ["atsamd-hal/samd21e"]
+samd21g = ["atsamd-hal/samd21g"]
+samd21j = ["atsamd-hal/samd21j"]
+samd51g = ["atsamd-hal/samd51g"]
+samd51j = ["atsamd-hal/samd51j"]
+samd51n = ["atsamd-hal/samd51n"]
+samd51p = ["atsamd-hal/samd51p"]
+same51g = ["atsamd-hal/same51g"]
+same51j = ["atsamd-hal/same51j"]
+same51n = ["atsamd-hal/same51n"]
+same53j = ["atsamd-hal/same53j"]
+same53n = ["atsamd-hal/same53n"]
+same54n = ["atsamd-hal/same54n"]
+same54p = ["atsamd-hal/same54p"]
