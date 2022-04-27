@@ -27,11 +27,10 @@ use atsamd_hal::target_device::usb::{
     host::{BINTERVAL, PCFG, PINTFLAG, PSTATUS, PSTATUSCLR, PSTATUSSET},
 };
 use core::convert::TryInto;
-use log::{trace, warn};
 
 // Maximum time to wait for a control request with data to finish. cf
 // §9.2.6.1 of USB 2.0.
-const USB_TIMEOUT: usize = 5 * 1024; // 5 Seconds
+const USB_TIMEOUT: u64 = 5 * 1024; // 5 Seconds
 
 // samd21 only supports 8 pipes.
 const MAX_PIPES: usize = 8;
@@ -153,7 +152,7 @@ impl Pipe<'_, '_> {
         w_value: WValue,
         w_index: u16,
         buf: Option<&mut [u8]>,
-        millis: &dyn Fn() -> usize,
+        millis: fn() -> u64,
     ) -> Result<usize, PipeErr> {
         /*
          * Setup stage.
@@ -219,7 +218,7 @@ impl Pipe<'_, '_> {
         token: PToken,
         buf: &DataBuf,
         nak_limit: usize,
-        millis: &dyn Fn() -> usize,
+        millis: fn() -> u64,
     ) -> Result<(), PipeErr> {
         trace!("p{}: sending {:?}", self.num, buf);
 
@@ -241,7 +240,7 @@ impl Pipe<'_, '_> {
         ep: &mut dyn Endpoint,
         buf: &mut [u8],
         nak_limit: usize,
-        millis: &dyn Fn() -> usize,
+        millis: fn() -> u64,
     ) -> Result<usize, PipeErr> {
         // TODO: pull this from pipe descriptor for this addr/ep.
         let packet_size = 8;
@@ -302,7 +301,7 @@ impl Pipe<'_, '_> {
         ep: &mut dyn Endpoint,
         buf: &[u8],
         nak_limit: usize,
-        millis: &dyn Fn() -> usize,
+        millis: fn() -> u64,
     ) -> Result<usize, PipeErr> {
         trace!("p{}: Should OUT for {}b.", self.num, buf.len());
         self.desc.bank0.pcksize.modify(|_, w| {
@@ -385,7 +384,7 @@ impl Pipe<'_, '_> {
         ep: &mut dyn Endpoint,
         token: PToken,
         retries: usize,
-        millis: &dyn Fn() -> usize,
+        millis: fn() -> u64,
     ) -> Result<(), PipeErr> {
         self.dispatch_packet(ep, token);
 
@@ -571,6 +570,7 @@ impl Pipe<'_, '_> {
 
 // TODO: merge into SVD for pipe cfg register.
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(defmt::Format)]
 pub(crate) enum PToken {
     Setup = 0x0,
     In = 0x1,
@@ -602,6 +602,7 @@ impl From<TransferType> for PType {
     }
 }
 
+#[derive(defmt::Format)]
 struct DataBuf<'a> {
     ptr: *mut u8,
     len: usize,
@@ -609,17 +610,17 @@ struct DataBuf<'a> {
 }
 impl DataBuf<'_> {}
 
-impl core::fmt::Debug for DataBuf<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "DataBuf {{ len: {}, ptr: [", self.len)?;
-        for i in 0..self.len {
-            write!(f, " {:x}", unsafe {
-                *self.ptr.offset(i.try_into().unwrap())
-            })?;
-        }
-        write!(f, " ] }}")
-    }
-}
+// impl core::fmt::Debug for DataBuf<'_> {
+//     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+//         write!(f, "DataBuf {{ len: {}, ptr: [", self.len)?;
+//         for i in 0..self.len {
+//             write!(f, " {:x}", unsafe {
+//                 *self.ptr.offset(i.try_into().unwrap())
+//             })?;
+//         }
+//         write!(f, " ] }}")
+//     }
+// }
 
 impl<'a, T> From<&'a mut T> for DataBuf<'a> {
     fn from(v: &'a mut T) -> Self {

@@ -11,19 +11,26 @@ repository = "https://github.com/bjc/atsamd-21-host.git"
 readme = "README.md"
 
 [dependencies]
-usb-host = "0.1"
-starb = "0.3"
-log = "0.4"
+usb-host = { path = "../usb-host" }
+heapless = "0.7"
 embedded-hal = "0.2"
 atsamd-hal = "0.14"
+
+defmt = { version = "0.3" }
+#log = { version = "0.4", optional = true }
 
 [dev-dependencies.atsamd-hal]
 version = "0.14"
 features = ["samd21e"]
 
+#[dev-dependencies.defmt]
+#version = "0.4"
+
 # Need to re-export features from atsamd-hal. If there were a
 # compelling reason to merge this into there, this is it.
 [features]
+defmt = []
+log = []
 samd11c = ["atsamd-hal/samd11c"]
 samd21e = ["atsamd-hal/samd21e"]
 samd21g = ["atsamd-hal/samd21g"]

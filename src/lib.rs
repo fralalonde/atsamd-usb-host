@@ -1,15 +1,16 @@
 //! USB Host driver implementation for SAMD* series chips.
+//! USB Host driver implementation for SAMD* series chips.
 
 #![no_std]
+
 mod pipe;
+
+#[macro_use]
+extern crate defmt;
 
 use pipe::{PipeErr, PipeTable};
 
-use usb_host::{
-    DescriptorType, DeviceDescriptor, Direction, Driver, DriverError, Endpoint, RequestCode,
-    RequestDirection, RequestKind, RequestRecipient, RequestType, TransferError, TransferType,
-    USBHost, WValue,
-};
+use usb_host::{AddressPool, DescriptorType, DeviceDescriptor, Direction, Driver, DriverError, Endpoint, RequestCode, RequestDirection, RequestKind, RequestRecipient, RequestType, TransferError, TransferType, USBHost, WValue};
 
 use atsamd_hal::{
     calibration::{usb_transn_cal, usb_transp_cal, usb_trim_cal},
@@ -18,25 +19,27 @@ use atsamd_hal::{
     target_device::{PM, USB},
 };
 use embedded_hal::digital::v2::OutputPin;
-use log::{debug, error, trace, warn};
-use starb::{Reader, RingBuffer, Writer};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Event {
-    Error,
+#[derive(Debug)]
+#[derive(defmt::Format)]
+pub enum HostEvent {
     Detached,
     Attached,
+    RamAccess,
+    UpstreamResume,
+    DownResume,
+    WakeUp,
+    Reset,
+    HostStartOfFrame,
 }
-type Events = RingBuffer<Event>;
-type EventReader = Reader<'static, Event>;
-type EventWriter = Writer<'static, Event>;
 
 const NAK_LIMIT: usize = 15;
 
 // Ring buffer for sharing events from interrupt context.
-static mut EVENTS: Events = Events::new();
+// static mut EVENTS: Events = Events::new();
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(defmt::Format)]
 enum DetachedState {
     Initialize,
     WaitForDevice,
@@ -44,13 +47,15 @@ enum DetachedState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(defmt::Format)]
 enum AttachedState {
     ResetBus,
     WaitResetComplete,
-    WaitSOF(usize),
+    WaitSOF(u64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(defmt::Format)]
 enum SteadyState {
     Configuring,
     Running,
@@ -58,6 +63,7 @@ enum SteadyState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(defmt::Format)]
 enum TaskState {
     Detached(DetachedState),
     Attached(AttachedState),
@@ -68,9 +74,11 @@ use core::mem::{self, MaybeUninit};
 use core::ptr;
 
 const MAX_DEVICES: usize = 4;
+
 struct DeviceTable {
     tbl: [Option<Device>; MAX_DEVICES],
 }
+
 impl DeviceTable {
     fn new() -> Self {
         let tbl = {
@@ -109,25 +117,21 @@ struct Device {
     addr: u8,
 }
 
-pub struct SAMDHost<'a, F> {
+pub struct SAMDHost {
     usb: USB,
-
-    events: EventReader,
     task_state: TaskState,
 
     // Need chunk of RAM for USB pipes, which gets used with DESCADD
     // register.
     pipe_table: PipeTable,
 
-    devices: DeviceTable,
+    addr_pool: AddressPool,
 
     _dm_pad: gpio::Pa24<gpio::PfG>,
     _dp_pad: gpio::Pa25<gpio::PfG>,
     _sof_pad: Option<gpio::Pa23<gpio::PfG>>,
     host_enable_pin: Option<gpio::Pa28<Output<OpenDrain>>>,
-
-    // To get current milliseconds.
-    millis: &'a F,
+    millis: fn() -> u64,
 }
 
 pub struct Pins {
@@ -136,6 +140,7 @@ pub struct Pins {
     sof_pin: Option<gpio::Pa23<Input<Floating>>>,
     host_enable_pin: Option<gpio::Pa28<Input<Floating>>>,
 }
+
 impl Pins {
     pub fn new(
         dm_pin: gpio::Pa24<Input<Floating>>,
@@ -152,49 +157,68 @@ impl Pins {
     }
 }
 
-impl<'a, F> SAMDHost<'a, F>
-where
-    F: Fn() -> usize,
-{
+impl SAMDHost {
     pub fn new(
         usb: USB,
         pins: Pins,
         port: &mut gpio::Port,
         clocks: &mut GenericClockController,
-        pm: &mut PM,
-        millis: &'a F,
-    ) -> (Self, impl FnMut()) {
-        let (eventr, mut eventw) = unsafe { EVENTS.split() };
+        power: &mut PM,
+        millis: fn() -> u64,
+    ) -> Self {
+        power.apbbmask.modify(|_, w| w.usb_().set_bit());
 
-        let rc = Self {
+        clocks.configure_gclk_divider_and_source(ClockGenId::GCLK6, 1, ClockSource::DFLL48M, false);
+        let gclk6 = clocks.get_gclk(ClockGenId::GCLK6).expect("Could not get clock 6");
+        clocks.usb(&gclk6);
+
+        SAMDHost {
             usb,
-
-            events: eventr,
             task_state: TaskState::Detached(DetachedState::Initialize),
-
             pipe_table: PipeTable::new(),
-
-            devices: DeviceTable::new(),
+            addr_pool: usb_host::AddressPool::new(),
 
             _dm_pad: pins.dm_pin.into_function_g(port),
             _dp_pad: pins.dp_pin.into_function_g(port),
             _sof_pad: pins.sof_pin.map(|p| p.into_function_g(port)),
             host_enable_pin: pins.host_enable_pin.map(|p| p.into_open_drain_output(port)),
-
             millis,
-        };
+        }
+    }
 
-        pm.apbbmask.modify(|_, w| w.usb_().set_bit());
+    /// Low-Level USB Host Interrupt service method
+    /// Any Event returned by should be sent to process_event()
+    /// then fsm_tick() should be called for each event or once if no event at all
+    pub fn irq_next_event(&self) -> Option<HostEvent> {
+        let flags = self.usb.host().intflag.read();
 
-        // Set up USB clock from 48MHz source on generic clock 6.
-        clocks.configure_gclk_divider_and_source(ClockGenId::GCLK6, 1, ClockSource::DFLL48M, false);
-        let gclk6 = clocks
-            .get_gclk(ClockGenId::GCLK6)
-            .expect("Could not get clock 6");
-        clocks.usb(&gclk6);
-
-        let usbp = &rc.usb as *const _ as usize;
-        (rc, move || handler(usbp, &mut eventw))
+        if flags.ddisc().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.ddisc().set_bit());
+            Some(HostEvent::Detached)
+        } else if flags.dconn().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.dconn().set_bit());
+            Some(HostEvent::Attached)
+        } else if flags.ramacer().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.ramacer().set_bit());
+            Some(HostEvent::RamAccess)
+        } else if flags.uprsm().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.uprsm().set_bit());
+            Some(HostEvent::UpstreamResume)
+        } else if flags.dnrsm().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.dnrsm().set_bit());
+            Some(HostEvent::DownResume)
+        } else if flags.wakeup().bit_is_set() {
+            self.usb.host().intflag.write(|w| w.wakeup().set_bit());
+            Some(HostEvent::WakeUp)
+        } else if flags.rst().bit_is_set() {
+            // self.usb.host().intflag.write(|w| w.rst().set_bit());
+            Some(HostEvent::Reset)
+        } else if flags.hsof().bit_is_set() {
+            // self.usb.host().intflag.write(|w| w.hsof().set_bit());
+            Some(HostEvent::HostStartOfFrame)
+        } else {
+            None
+        }
     }
 
     pub fn reset_periph(&mut self) {
@@ -248,27 +272,28 @@ where
         debug!("...done");
     }
 
-    pub fn task(&mut self, drivers: &mut [&mut dyn Driver]) {
+    pub fn update(&mut self, event: Option<HostEvent>, drivers: &mut dyn Driver) {
         static mut LAST_TASK_STATE: TaskState = TaskState::Detached(DetachedState::Illegal);
 
-        if let Some(event) = self.events.shift() {
+        if let Some(event) = event {
             trace!("Found event: {:?}", event);
             self.task_state = match event {
-                Event::Error => TaskState::Detached(DetachedState::Illegal),
-                Event::Detached => {
+                // HostEvent::Error => TaskState::Detached(DetachedState::Illegal),
+                HostEvent::Detached => {
                     if let TaskState::Detached(_) = self.task_state {
                         self.task_state
                     } else {
                         TaskState::Detached(DetachedState::Initialize)
                     }
                 }
-                Event::Attached => {
+                HostEvent::Attached => {
                     if let TaskState::Detached(_) = self.task_state {
                         TaskState::Attached(AttachedState::ResetBus)
                     } else {
                         self.task_state
                     }
                 }
+                _ => self.task_state
             };
         }
 
@@ -294,7 +319,7 @@ where
         self.fsm(drivers);
     }
 
-    fn fsm(&mut self, drivers: &mut [&mut dyn Driver]) {
+    fn fsm(&mut self, drivers: &mut dyn Driver) {
         // respond to events from interrupt.
         match self.task_state {
             TaskState::Detached(s) => self.detached_fsm(s),
@@ -353,7 +378,7 @@ where
         }
     }
 
-    fn steady_fsm(&mut self, s: SteadyState, drivers: &mut [&mut dyn Driver]) {
+    fn steady_fsm(&mut self, s: SteadyState, drivers: &mut dyn Driver) {
         match s {
             SteadyState::Configuring => {
                 self.task_state = match self.configure_dev(drivers) {
@@ -366,22 +391,22 @@ where
             }
 
             SteadyState::Running => {
-                for d in &mut drivers[..] {
-                    if let Err(e) = d.tick((self.millis)(), self) {
-                        warn!("running driver {:?}: {:?}", d, e);
-                        if let DriverError::Permanent(a, _) = e {
-                            d.remove_device(a);
-                            self.devices.remove(a);
-                        }
+                // for d in &mut drivers[..] {
+                if let Err(e) = drivers.tick((self.millis)(), self) {
+                    // warn!("running driver {:?}: {:?}", d, e);
+                    if let DriverError::Permanent(a, _) = e {
+                        drivers.remove_device(a);
+                        // self.devices.remove(a);
                     }
                 }
+                // }
             }
 
             SteadyState::Error => {}
         }
     }
 
-    fn configure_dev(&mut self, drivers: &mut [&mut dyn Driver]) -> Result<(), TransferError> {
+    fn configure_dev(&mut self, drivers: &mut dyn Driver) -> Result<(), TransferError> {
         let none: Option<&mut [u8]> = None;
         let max_packet_size: u16 = match self.usb.host().status.read().speed().bits() {
             0x0 => 64,
@@ -410,11 +435,7 @@ where
         trace!(" -- dev_desc: {:?}", dev_desc);
 
         // TODO: new error for being out of devices.
-        let addr = self
-            .devices
-            .next()
-            .ok_or(TransferError::Permanent("out of devices"))?
-            .addr;
+        let addr = self.addr_pool.take_next().ok_or(TransferError::Permanent("Out of USB addr"))?;
         debug!("Setting address to {}.", addr);
         self.control_transfer(
             &mut a0ep0,
@@ -424,20 +445,17 @@ where
                 RequestRecipient::Device,
             )),
             RequestCode::SetAddress,
-            WValue::from((addr, 0)),
+            WValue::from((addr.into(), 0)),
             0,
             none,
         )?;
 
-        // Now that the device is addressed, see if any drivers want
-        // it.
-        for d in &mut drivers[..] {
-            if d.want_device(&dev_desc) {
-                let res = d.add_device(dev_desc, addr);
-                match res {
-                    Ok(_) => return Ok(()),
-                    Err(_) => return Err(TransferError::Permanent("out of addresses")),
-                }
+        // Now that the device is addressed, see if any drivers want  it.
+        if drivers.want_device(&dev_desc) {
+            let res = drivers.add_device(dev_desc, addr.into());
+            match res {
+                Ok(_) => return Ok(()),
+                Err(_) => return Err(TransferError::Permanent("out of addresses")),
             }
         }
         Ok(())
@@ -449,6 +467,7 @@ struct Addr0EP0 {
     in_toggle: bool,
     out_toggle: bool,
 }
+
 impl Endpoint for Addr0EP0 {
     fn address(&self) -> u8 {
         0
@@ -487,30 +506,6 @@ impl Endpoint for Addr0EP0 {
     }
 }
 
-pub fn handler(usbp: usize, events: &mut EventWriter) {
-    let usb: &mut USB = unsafe { core::mem::transmute(usbp) };
-    let flags = usb.host().intflag.read();
-
-    trace!("USB - {:x}", flags.bits());
-
-    let mut unshift_event = |e: Event| {
-        if let Err(e) = events.unshift(e) {
-            error!("Couldn't write USB event to queue: {:?}", e);
-        }
-    };
-
-    if flags.dconn().bit_is_set() {
-        trace!(" +dconn");
-        usb.host().intflag.write(|w| w.dconn().set_bit());
-        unshift_event(Event::Attached);
-    }
-
-    if flags.ddisc().bit_is_set() {
-        trace!(" +ddisc");
-        usb.host().intflag.write(|w| w.ddisc().set_bit());
-        unshift_event(Event::Detached);
-    }
-}
 
 impl From<PipeErr> for TransferError {
     fn from(v: PipeErr) -> Self {
@@ -530,10 +525,7 @@ impl From<PipeErr> for TransferError {
     }
 }
 
-impl<F> USBHost for SAMDHost<'_, F>
-where
-    F: Fn() -> usize,
-{
+impl USBHost for SAMDHost {
     fn control_transfer(
         &mut self,
         ep: &mut dyn Endpoint,
