@@ -26,7 +26,6 @@ use atsamd_hal::target_device::usb::{
     self,
     host::{BINTERVAL, PCFG, PINTFLAG, PSTATUS, PSTATUSCLR, PSTATUSSET},
 };
-use core::convert::TryInto;
 
 // Maximum time to wait for a control request with data to finish. cf
 // §9.2.6.1 of USB 2.0.
