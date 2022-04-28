@@ -35,38 +35,19 @@ pub enum HostEvent {
 
 const NAK_LIMIT: usize = 15;
 
-// Ring buffer for sharing events from interrupt context.
-// static mut EVENTS: Events = Events::new();
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(defmt::Format)]
-enum DetachedState {
-    Initialize,
-    WaitForDevice,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(defmt::Format)]
-enum AttachedState {
-    ResetBus,
-    WaitResetComplete,
-    WaitSOF(u64),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(defmt::Format)]
-enum SteadyState {
-    Configuring,
-    Running,
-    Error,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[derive(defmt::Format)]
 enum TaskState {
-    Detached(DetachedState),
-    Attached(AttachedState),
-    Steady(SteadyState),
+    Initialize,
+    WaitForDevice,
+
+    ResetBus,
+    WaitResetComplete,
+    WaitSOF(u64),
+
+    Configuring,
+    Running,
+    Error,
 }
 
 use core::mem::{self, MaybeUninit};
@@ -173,7 +154,7 @@ impl SAMDHost {
 
         SAMDHost {
             usb,
-            task_state: TaskState::Detached(DetachedState::Initialize),
+            task_state: TaskState::Initialize,
             pipe_table: PipeTable::new(),
             addr_pool: usb_host::AddressPool::new(),
 
@@ -282,49 +263,26 @@ impl SAMDHost {
 
         if let Some(event) = event {
             match (event, self.task_state) {
-                (HostEvent::Detached, TaskState::Attached(_) | TaskState::Steady(_)) => {
-                    self.task_state = TaskState::Detached(DetachedState::Initialize)
-                }
-                (HostEvent::Attached, TaskState::Detached(_)) => {
-                    self.task_state = TaskState::Attached(AttachedState::ResetBus)
-                }
+                (HostEvent::Detached, _) => self.task_state = TaskState::Initialize,
+                (HostEvent::Attached, TaskState::Initialize | TaskState::WaitForDevice) => self.task_state = TaskState::ResetBus,
                 _ => {}
             };
         }
 
         match self.task_state {
-            TaskState::Detached(s) => self.detached_fsm(s),
-            TaskState::Attached(s) => self.attached_fsm(s),
-            TaskState::Steady(s) => self.steady_fsm(s, drivers),
-        };
-
-        if prev_state != self.task_state {
-            debug!("USB new task state {:?}", self.task_state)
-        }
-    }
-
-    fn detached_fsm(&mut self, s: DetachedState) {
-        match s {
-            DetachedState::Initialize => {
+            TaskState::Initialize => {
                 self.reset_host();
-                // TODO: Free resources.
-
-                self.task_state = TaskState::Detached(DetachedState::WaitForDevice);
+                self.task_state = TaskState::WaitForDevice;
             }
-
             // Do nothing state. Just wait for an interrupt to come in saying we have a device attached.
-            DetachedState::WaitForDevice => {}
-        }
-    }
+            TaskState::WaitForDevice => {}
 
-    fn attached_fsm(&mut self, s: AttachedState) {
-        match s {
-            AttachedState::ResetBus => {
+            TaskState::ResetBus => {
                 self.usb.host().ctrlb.modify(|_, w| w.busreset().set_bit());
-                self.task_state = TaskState::Attached(AttachedState::WaitResetComplete);
+                self.task_state = TaskState::WaitResetComplete;
             }
 
-            AttachedState::WaitResetComplete => {
+            TaskState::WaitResetComplete => {
                 if self.usb.host().intflag.read().rst().bit_is_set() {
                     self.usb.host().intflag.write(|w| w.rst().set_bit());
 
@@ -333,48 +291,41 @@ impl SAMDHost {
                     self.usb.host().ctrlb.modify(|_, w| w.sofe().set_bit());
                     // USB spec requires 20ms of SOF after bus reset.
                     self.task_state =
-                        TaskState::Attached(AttachedState::WaitSOF((self.millis)() + 20));
+                        TaskState::WaitSOF((self.millis)() + 20);
                 }
             }
-
-            AttachedState::WaitSOF(until) => {
+            TaskState::WaitSOF(until) => {
                 if self.usb.host().intflag.read().hsof().bit_is_set() {
                     self.usb.host().intflag.write(|w| w.hsof().set_bit());
                     if (self.millis)() >= until {
-                        self.task_state = TaskState::Steady(SteadyState::Configuring);
+                        self.task_state = TaskState::Configuring;
                     }
                 }
             }
-        }
-    }
-
-    fn steady_fsm(&mut self, s: SteadyState, drivers: &mut dyn Driver) {
-        match s {
-            SteadyState::Configuring => {
+            TaskState::Configuring => {
                 self.task_state = match self.configure_dev(drivers) {
-                    Ok(_) => TaskState::Steady(SteadyState::Running),
+                    Ok(_) => TaskState::Running,
                     Err(e) => {
                         warn!("Enumeration error: {:?}", e);
-                        TaskState::Steady(SteadyState::Error)
+                        TaskState::Error
                     }
                 }
             }
-
-            SteadyState::Running => {
-                // for d in &mut drivers[..] {
+            TaskState::Running => {
                 if let Err(e) = drivers.tick((self.millis)(), self) {
-                    // warn!("running driver {:?}: {:?}", d, e);
                     if let DriverError::Permanent(a, _) = e {
                         drivers.remove_device(a);
-                        // self.devices.remove(a);
                     }
                 }
-                // }
             }
+            TaskState::Error => {}
+        };
 
-            SteadyState::Error => {}
+        if prev_state != self.task_state {
+            debug!("USB new task state {:?}", self.task_state)
         }
     }
+
 
     fn configure_dev(&mut self, drivers: &mut dyn Driver) -> Result<(), TransferError> {
         let none: Option<&mut [u8]> = None;
@@ -401,12 +352,11 @@ impl SAMDHost {
             0,
             Some(unsafe { to_slice_mut(&mut dev_desc) }),
         )?;
-
-        trace!(" -- dev_desc: {:?}", dev_desc);
+        debug!("USB Initial Device Descriptor: {:?}", dev_desc);
 
         // TODO: new error for being out of devices.
         let addr = self.addr_pool.take_next().ok_or(TransferError::Permanent("Out of USB addr"))?;
-        debug!("Setting address to {}.", addr);
+
         self.control_transfer(
             &mut a0ep0,
             RequestType::from((
@@ -419,15 +369,16 @@ impl SAMDHost {
             0,
             none,
         )?;
+        debug!("USB Device Address Set to: {:?}", addr);
 
-        // Now that the device is addressed, see if any drivers want  it.
-        if drivers.want_device(&dev_desc) {
-            let res = drivers.add_device(dev_desc, addr.into());
-            match res {
-                Ok(_) => return Ok(()),
-                Err(_) => return Err(TransferError::Permanent("out of addresses")),
-            }
-        }
+        // // Now that the device is addressed, see if any drivers want  it.
+        // if drivers.want_device(&dev_desc) {
+        //     let res = drivers.add_device(dev_desc, addr.into());
+        //     match res {
+        //         Ok(_) => return Ok(()),
+        //         Err(_) => return Err(TransferError::Permanent("out of addresses")),
+        //     }
+        // }
         Ok(())
     }
 }

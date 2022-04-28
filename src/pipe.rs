@@ -187,9 +187,6 @@ impl Pipe<'_, '_> {
             }
         }
 
-        /*
-         * Status stage.
-         */
         // TODO: status stage has up to 50ms to complete. cf §9.2.6.4
         // of USB 2.0.
         self.desc.bank0.pcksize.modify(|_, w| {
@@ -258,12 +255,10 @@ impl Pipe<'_, '_> {
                     .bits(buf.as_mut_ptr() as u32 + bytes_received as u32)
             });
             self.regs.statusclr.write(|w| w.bk0rdy().set_bit());
-            trace!("--- !!! regs-pre-dispatch !!! ---");
 
             self.dispatch_retries(ep, PToken::In, nak_limit, millis)?;
             let recvd = self.desc.bank0.pcksize.read().byte_count().bits() as usize;
             bytes_received += recvd;
-            trace!("!! read {} of {}", bytes_received, buf.len());
             if recvd < packet_size {
                 break;
             }
