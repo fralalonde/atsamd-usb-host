@@ -1,6 +1,6 @@
 use crate::pipe::{PipeErr, PipeTable};
 
-use usb_host::{AddressPool, DescriptorType, DeviceDescriptor, Direction, Driver, DriverError, Endpoint, HostEvent, RequestCode, RequestDirection, RequestKind, RequestRecipient, RequestType, stack, TransferError, TransferType, USBHost, WValue};
+use usb_host::{AddressPool, DescriptorType, DeviceDescriptor, Direction, Driver, DriverError, Endpoint, HostEvent, RequestCode, RequestDirection, RequestKind, RequestRecipient, RequestType, stack, TransferError, TransferType, UsbHost, WValue};
 
 use atsamd_hal::{
     calibration::{usb_transn_cal, usb_transp_cal, usb_trim_cal},
@@ -111,7 +111,7 @@ impl SAMDHost {
     /// Low-Level USB Host Interrupt service method
     /// Any Event returned by should be sent to process_event()
     /// then fsm_tick() should be called for each event or once if no event at all
-    pub fn next_irq(&self) -> Option<HostIrq> {
+    fn next_irq(&self) -> Option<HostIrq> {
         let flags = self.usb.host().intflag.read();
 
         if flags.ddisc().bit_is_set() {
@@ -181,9 +181,39 @@ impl SAMDHost {
         debug!("USB Host Reset");
     }
 
-    pub fn update(&mut self, irq: Option<HostIrq>, addr_pool: &mut AddressPool) -> Option<HostEvent> {
+
+}
+
+impl From<PipeErr> for TransferError {
+    fn from(v: PipeErr) -> Self {
+        match v {
+            PipeErr::TransferFail => Self::Retry("transfer failed"),
+            PipeErr::Flow => Self::Retry("data flow"),
+            PipeErr::DataToggle => Self::Retry("toggle sequence"),
+            PipeErr::ShortPacket => Self::Permanent("short packet"),
+            PipeErr::InvalidPipe => Self::Permanent("invalid pipe"),
+            PipeErr::InvalidToken => Self::Permanent("invalid token"),
+            PipeErr::Stall => Self::Permanent("stall"),
+            PipeErr::PipeErr => Self::Permanent("pipe error"),
+            PipeErr::HWTimeout => Self::Permanent("hardware timeout"),
+            PipeErr::SWTimeout => Self::Permanent("software timeout"),
+            PipeErr::Other(s) => Self::Permanent(s),
+        }
+    }
+}
+
+impl UsbHost for SAMDHost {
+    fn max_host_packet_size(&self) -> u16 {
+        match self.usb.host().status.read().speed().bits() {
+            0x0 => 64,
+            _ => 8,
+        }
+    }
+
+    fn update(&mut self,  addr_pool: &mut AddressPool) -> Option<HostEvent> {
         let prev_state = self.state;
         let mut host_event = None;
+        let irq = self.next_irq();
 
         match (irq, self.state) {
             (Some(HostIrq::Detached), _) => self.state = HostState::Initialize,
@@ -200,10 +230,10 @@ impl SAMDHost {
             (Some(HostIrq::HostStartOfFrame), HostState::WaitSOF(until)) if (self.millis)() >= until => {
                 self.state = HostState::Ready;
                 match stack::configure_dev(self, addr_pool) {
-                    Ok(device) => {
+                    Ok((device, desc)) => {
                         debug!("USB Ready {:?}", device);
                         self.state = HostState::Ready;
-                        host_event = Some(HostEvent::Ready(device));
+                        host_event = Some(HostEvent::Ready(device, desc));
                     }
                     Err(e) => {
                         warn!("Enumeration error: {:?}", e);
@@ -227,33 +257,6 @@ impl SAMDHost {
             debug!("USB new task state {:?}", self.state)
         }
         host_event
-    }
-}
-
-impl From<PipeErr> for TransferError {
-    fn from(v: PipeErr) -> Self {
-        match v {
-            PipeErr::TransferFail => Self::Retry("transfer failed"),
-            PipeErr::Flow => Self::Retry("data flow"),
-            PipeErr::DataToggle => Self::Retry("toggle sequence"),
-            PipeErr::ShortPacket => Self::Permanent("short packet"),
-            PipeErr::InvalidPipe => Self::Permanent("invalid pipe"),
-            PipeErr::InvalidToken => Self::Permanent("invalid token"),
-            PipeErr::Stall => Self::Permanent("stall"),
-            PipeErr::PipeErr => Self::Permanent("pipe error"),
-            PipeErr::HWTimeout => Self::Permanent("hardware timeout"),
-            PipeErr::SWTimeout => Self::Permanent("software timeout"),
-            PipeErr::Other(s) => Self::Permanent(s),
-        }
-    }
-}
-
-impl USBHost for SAMDHost {
-    fn max_host_packet_size(&self) -> u16 {
-        match self.usb.host().status.read().speed().bits() {
-            0x0 => 64,
-            _ => 8,
-        }
     }
 
     fn control_transfer(

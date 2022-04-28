@@ -98,7 +98,7 @@ impl PipeTable {
         });
 
         pdesc.bank0.ctrl_pipe.write(|w| {
-            w.pdaddr().set_addr(endpoint.address());
+            w.pdaddr().set_addr(endpoint.device_address().into());
             w.pepnum().set_epnum(endpoint.endpoint_num())
         });
         pdesc.bank0.pcksize.write(|w| {
