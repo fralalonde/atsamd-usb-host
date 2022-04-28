@@ -53,6 +53,7 @@ pub(crate) enum PipeErr {
     SWTimeout,
     Other(&'static str),
 }
+
 impl From<&'static str> for PipeErr {
     fn from(v: &'static str) -> Self {
         Self::Other(v)
@@ -86,8 +87,7 @@ impl PipeTable {
         // Just use two pipes for now. 0 is always for control
         // endpoints, 1 for everything else.
         //
-        // TODO: cache in-use pipes and return them without init if
-        // possible.
+        // TODO: cache in-use pipes and return them without init if possible.
         let i = if endpoint.endpoint_num() == 0 { 0 } else { 1 };
 
         let pregs = PipeRegs::from(host, i);
@@ -97,12 +97,7 @@ impl PipeTable {
             let ptype = PType::from(endpoint.transfer_type()) as u8;
             unsafe { w.ptype().bits(ptype) }
         });
-        trace!(
-            "setting paddr of pipe {} to {}:{}",
-            i,
-            endpoint.address(),
-            endpoint.endpoint_num()
-        );
+
         pdesc.bank0.ctrl_pipe.write(|w| {
             w.pdaddr().set_addr(endpoint.address());
             w.pepnum().set_epnum(endpoint.endpoint_num())
@@ -142,6 +137,7 @@ pub(crate) struct Pipe<'a, 'b> {
     pub(crate) regs: PipeRegs<'b>,
     pub(crate) desc: &'a mut PipeDesc,
 }
+
 impl Pipe<'_, '_> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn control_transfer(
@@ -206,7 +202,6 @@ impl Pipe<'_, '_> {
             RequestDirection::HostToDevice => PToken::In,
         };
 
-        trace!("dispatching status stage");
         self.dispatch_retries(ep, token, NAK_LIMIT, millis)?;
 
         Ok(transfer_len)
@@ -220,8 +215,6 @@ impl Pipe<'_, '_> {
         nak_limit: usize,
         millis: fn() -> u64,
     ) -> Result<(), PipeErr> {
-        trace!("p{}: sending {:?}", self.num, buf);
-
         self.desc
             .bank0
             .addr
@@ -245,7 +238,6 @@ impl Pipe<'_, '_> {
         // TODO: pull this from pipe descriptor for this addr/ep.
         let packet_size = 8;
 
-        trace!("p{}: Should IN for {}b.", self.num, buf.len());
         self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(buf.len() as u16) };
             unsafe { w.multi_packet_size().bits(0) }
@@ -267,7 +259,6 @@ impl Pipe<'_, '_> {
             });
             self.regs.statusclr.write(|w| w.bk0rdy().set_bit());
             trace!("--- !!! regs-pre-dispatch !!! ---");
-            self.log_regs();
 
             self.dispatch_retries(ep, PToken::In, nak_limit, millis)?;
             let recvd = self.desc.bank0.pcksize.read().byte_count().bits() as usize;
@@ -283,7 +274,6 @@ impl Pipe<'_, '_> {
 
         self.regs.statusset.write(|w| w.pfreeze().set_bit());
         if bytes_received < buf.len() {
-            self.log_regs();
             // TODO: honestly, this is probably a panic condition,
             // since whatever's in DataBuf.ptr is totally
             // invalid. Alternately, this function should be declared
@@ -303,7 +293,6 @@ impl Pipe<'_, '_> {
         nak_limit: usize,
         millis: fn() -> u64,
     ) -> Result<usize, PipeErr> {
-        trace!("p{}: Should OUT for {}b.", self.num, buf.len());
         self.desc.bank0.pcksize.modify(|_, w| {
             unsafe { w.byte_count().bits(buf.len() as u16) };
             unsafe { w.multi_packet_size().bits(0) }
@@ -470,9 +459,6 @@ impl Pipe<'_, '_> {
             _ => {}
         }
 
-        trace!("initial regs");
-        self.log_regs();
-
         self.regs.statusclr.write(|w| w.pfreeze().set_bit());
     }
 
@@ -482,20 +468,20 @@ impl Pipe<'_, '_> {
             Ok(true)
         } else if self.desc.bank0.status_bk.read().errorflow().bit_is_set() {
             trace!("errorflow");
-            self.log_regs();
+
             Err(PipeErr::Flow)
         } else if self.desc.bank0.status_pipe.read().touter().bit_is_set() {
             trace!("touter");
-            self.log_regs();
+
             Err(PipeErr::HWTimeout)
         } else if self.desc.bank0.status_pipe.read().dtgler().bit_is_set() {
             trace!("dtgler");
-            self.log_regs();
+
             Err(PipeErr::DataToggle)
         } else if self.regs.intflag.read().trfail().bit_is_set() {
             self.regs.intflag.write(|w| w.trfail().set_bit());
             trace!("trfail");
-            self.log_regs();
+
             Err(PipeErr::TransferFail)
         } else {
             // Nothing wrong, but not done yet.
@@ -532,40 +518,6 @@ impl Pipe<'_, '_> {
             _ => Err(PipeErr::InvalidToken),
         }
     }
-
-    fn log_regs(&self) {
-        // Pipe regs
-        let cfg = self.regs.cfg.read().bits();
-        let bin = self.regs.binterval.read().bits();
-        let sts = self.regs.status.read().bits();
-        let ifl = self.regs.intflag.read().bits();
-        trace!(
-            "p{}: cfg: {:x}, bin: {:x}, sts: {:x}, ifl: {:x}",
-            self.num,
-            cfg,
-            bin,
-            sts,
-            ifl
-        );
-
-        // Pipe RAM regs
-        let adr = self.desc.bank0.addr.read().bits();
-        let pks = self.desc.bank0.pcksize.read().bits();
-        let ext = self.desc.bank0.extreg.read().bits();
-        let sbk = self.desc.bank0.status_bk.read().bits();
-        let hcp = self.desc.bank0.ctrl_pipe.read().bits();
-        let spi = self.desc.bank0.status_pipe.read().bits();
-        trace!(
-            "p{}: adr: {:x}, pks: {:x}, ext: {:x}, sbk: {:x}, hcp: {:x}, spi: {:x}",
-            self.num,
-            adr,
-            pks,
-            ext,
-            sbk,
-            hcp,
-            spi
-        );
-    }
 }
 
 // TODO: merge into SVD for pipe cfg register.
@@ -591,6 +543,7 @@ pub(crate) enum PType {
     _Reserved0 = 0x06,
     _Reserved1 = 0x07,
 }
+
 impl From<TransferType> for PType {
     fn from(v: TransferType) -> Self {
         match v {
@@ -608,19 +561,6 @@ struct DataBuf<'a> {
     len: usize,
     _marker: core::marker::PhantomData<&'a ()>,
 }
-impl DataBuf<'_> {}
-
-// impl core::fmt::Debug for DataBuf<'_> {
-//     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-//         write!(f, "DataBuf {{ len: {}, ptr: [", self.len)?;
-//         for i in 0..self.len {
-//             write!(f, " {:x}", unsafe {
-//                 *self.ptr.offset(i.try_into().unwrap())
-//             })?;
-//         }
-//         write!(f, " ] }}")
-//     }
-// }
 
 impl<'a, T> From<&'a mut T> for DataBuf<'a> {
     fn from(v: &'a mut T) -> Self {
@@ -640,6 +580,7 @@ pub(crate) struct PipeRegs<'a> {
     pub(crate) status: &'a mut PSTATUS,
     pub(crate) intflag: &'a mut PINTFLAG,
 }
+
 impl<'a> PipeRegs<'a> {
     pub(crate) fn from(host: &'a mut usb::HOST, i: usize) -> PipeRegs {
         assert!(i < MAX_PIPES);

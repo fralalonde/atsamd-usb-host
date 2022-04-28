@@ -43,7 +43,6 @@ const NAK_LIMIT: usize = 15;
 enum DetachedState {
     Initialize,
     WaitForDevice,
-    Illegal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -221,8 +220,8 @@ impl SAMDHost {
         }
     }
 
-    pub fn reset_periph(&mut self) {
-        debug!("resetting usb");
+    pub fn reset_host(&mut self) {
+        debug!("USB Host Resetting");
         // Reset the USB peripheral and wait for sync.
         self.usb.host().ctrla.write(|w| w.swrst().set_bit());
         while self.usb.host().syncbusy.read().swrst().bit_is_set() {}
@@ -261,7 +260,13 @@ impl SAMDHost {
 
         self.usb.host().intenset.write(|w| {
             w.dconn().set_bit();
-            w.ddisc().set_bit()
+            w.ddisc().set_bit();
+            w.wakeup().set_bit();
+            w.ramacer().set_bit();
+            w.uprsm().set_bit();
+            w.dnrsm().set_bit();
+            w.rst().set_bit();
+            w.hsof().set_bit()
         });
 
         self.usb.host().ctrla.modify(|_, w| w.enable().set_bit());
@@ -269,80 +274,46 @@ impl SAMDHost {
 
         // Set VBUS OK to allow host operation.
         self.usb.host().ctrlb.modify(|_, w| w.vbusok().set_bit());
-        debug!("...done");
+        debug!("USB Host Reset");
     }
 
     pub fn update(&mut self, event: Option<HostEvent>, drivers: &mut dyn Driver) {
-        static mut LAST_TASK_STATE: TaskState = TaskState::Detached(DetachedState::Illegal);
+        let prev_state = self.task_state;
 
         if let Some(event) = event {
-            trace!("Found event: {:?}", event);
-            self.task_state = match event {
-                // HostEvent::Error => TaskState::Detached(DetachedState::Illegal),
-                HostEvent::Detached => {
-                    if let TaskState::Detached(_) = self.task_state {
-                        self.task_state
-                    } else {
-                        TaskState::Detached(DetachedState::Initialize)
-                    }
+            match (event, self.task_state) {
+                (HostEvent::Detached, TaskState::Attached(_) | TaskState::Steady(_)) => {
+                    self.task_state = TaskState::Detached(DetachedState::Initialize)
                 }
-                HostEvent::Attached => {
-                    if let TaskState::Detached(_) = self.task_state {
-                        TaskState::Attached(AttachedState::ResetBus)
-                    } else {
-                        self.task_state
-                    }
+                (HostEvent::Attached, TaskState::Detached(_)) => {
+                    self.task_state = TaskState::Attached(AttachedState::ResetBus)
                 }
-                _ => self.task_state
+                _ => {}
             };
         }
 
-        static mut LAST_CBITS: u16 = 0;
-        static mut LAST_FLAGS: u16 = 0;
-        let cbits = self.usb.host().ctrlb.read().bits();
-        let bits = self.usb.host().intflag.read().bits();
-        unsafe {
-            if LAST_CBITS != cbits || LAST_FLAGS != bits || LAST_TASK_STATE != self.task_state {
-                trace!(
-                    "cb: {:x}, f: {:x} changing state {:?} -> {:?}",
-                    cbits,
-                    bits,
-                    LAST_TASK_STATE,
-                    self.task_state,
-                );
-            }
-            LAST_CBITS = cbits;
-            LAST_FLAGS = bits;
-            LAST_TASK_STATE = self.task_state
-        };
-
-        self.fsm(drivers);
-    }
-
-    fn fsm(&mut self, drivers: &mut dyn Driver) {
-        // respond to events from interrupt.
         match self.task_state {
             TaskState::Detached(s) => self.detached_fsm(s),
             TaskState::Attached(s) => self.attached_fsm(s),
             TaskState::Steady(s) => self.steady_fsm(s, drivers),
         };
+
+        if prev_state != self.task_state {
+            debug!("USB new task state {:?}", self.task_state)
+        }
     }
 
     fn detached_fsm(&mut self, s: DetachedState) {
         match s {
             DetachedState::Initialize => {
-                self.reset_periph();
+                self.reset_host();
                 // TODO: Free resources.
 
                 self.task_state = TaskState::Detached(DetachedState::WaitForDevice);
             }
 
-            // Do nothing state. Just wait for an interrupt to come in
-            // saying we have a device attached.
+            // Do nothing state. Just wait for an interrupt to come in saying we have a device attached.
             DetachedState::WaitForDevice => {}
-
-            // TODO: should probably reset everything if we end up here somehow.
-            DetachedState::Illegal => {}
         }
     }
 
@@ -355,7 +326,6 @@ impl SAMDHost {
 
             AttachedState::WaitResetComplete => {
                 if self.usb.host().intflag.read().rst().bit_is_set() {
-                    trace!("reset was sent");
                     self.usb.host().intflag.write(|w| w.rst().set_bit());
 
                     // Seems unneccesary, since SOFE will be set
