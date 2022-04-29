@@ -229,7 +229,7 @@ impl UsbHost for SAMDHost {
             }
             (Some(HostIrq::HostStartOfFrame), HostState::WaitSOF(until)) if (self.millis)() >= until => {
                 self.state = HostState::Ready;
-                match stack::configure_dev(self, addr_pool) {
+                match stack::address_dev(self, addr_pool) {
                     Ok((device, desc)) => {
                         debug!("USB Ready {:?}", device);
                         self.state = HostState::Ready;
