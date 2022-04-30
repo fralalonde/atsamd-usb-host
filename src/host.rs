@@ -1,6 +1,6 @@
 use crate::pipe::{PipeErr, PipeTable};
 
-use usb_host::{AddressPool, DescriptorType, DeviceDescriptor, Direction, Driver, DriverError, Endpoint, HostEvent, RequestCode, RequestDirection, RequestKind, RequestRecipient, RequestType, stack, TransferError, TransferType, UsbHost, WValue};
+use usb_host::{AddressPool, DescriptorType, DeviceDescriptor, Direction, Driver, Endpoint, HostEvent, RequestCode, RequestDirection, RequestKind, RequestRecipient, RequestType, stack, UsbError, TransferType, UsbHost, WValue};
 
 use atsamd_hal::{
     calibration::{usb_transn_cal, usb_transp_cal, usb_trim_cal},
@@ -184,19 +184,19 @@ impl SAMDHost {
 
 }
 
-impl From<PipeErr> for TransferError {
+impl From<PipeErr> for UsbError {
     fn from(v: PipeErr) -> Self {
         match v {
-            PipeErr::TransferFail => Self::Retry("transfer failed"),
-            PipeErr::Flow => Self::Retry("data flow"),
-            PipeErr::DataToggle => Self::Retry("toggle sequence"),
-            PipeErr::ShortPacket => Self::Permanent("short packet"),
-            PipeErr::InvalidPipe => Self::Permanent("invalid pipe"),
-            PipeErr::InvalidToken => Self::Permanent("invalid token"),
-            PipeErr::Stall => Self::Permanent("stall"),
-            PipeErr::PipeErr => Self::Permanent("pipe error"),
-            PipeErr::HWTimeout => Self::Permanent("hardware timeout"),
-            PipeErr::SWTimeout => Self::Permanent("software timeout"),
+            PipeErr::TransferFail => Self::Transient("Transfer failed"),
+            PipeErr::Flow => Self::Transient("Data flow"),
+            PipeErr::DataToggle => Self::Transient("Data toggle"),
+            PipeErr::ShortPacket => Self::Permanent("Short packet"),
+            PipeErr::InvalidPipe => Self::Permanent("Invalid pipe"),
+            PipeErr::InvalidToken => Self::Permanent("Invalid token"),
+            PipeErr::Stall => Self::Permanent("Stall"),
+            PipeErr::PipeErr => Self::Permanent("Pipe error"),
+            PipeErr::HWTimeout => Self::Permanent("Hardware timeout"),
+            PipeErr::SWTimeout => Self::Permanent("Software timeout"),
             PipeErr::Other(s) => Self::Permanent(s),
         }
     }
@@ -267,7 +267,7 @@ impl UsbHost for SAMDHost {
         w_value: WValue,
         w_index: u16,
         buf: Option<&mut [u8]>,
-    ) -> Result<usize, TransferError> {
+    ) -> Result<usize, UsbError> {
         let mut pipe = self.pipe_table.pipe_for(self.usb.host_mut(), ep);
         let len = pipe.control_transfer(
             ep,
@@ -285,13 +285,13 @@ impl UsbHost for SAMDHost {
         &mut self,
         ep: &mut dyn Endpoint,
         buf: &mut [u8],
-    ) -> Result<usize, TransferError> {
+    ) -> Result<usize, UsbError> {
         let mut pipe = self.pipe_table.pipe_for(self.usb.host_mut(), ep);
         let len = pipe.in_transfer(ep, buf, NAK_LIMIT, self.millis)?;
         Ok(len)
     }
 
-    fn out_transfer(&mut self, ep: &mut dyn Endpoint, buf: &[u8]) -> Result<usize, TransferError> {
+    fn out_transfer(&mut self, ep: &mut dyn Endpoint, buf: &[u8]) -> Result<usize, UsbError> {
         let mut pipe = self.pipe_table.pipe_for(self.usb.host_mut(), ep);
         let len = pipe.out_transfer(ep, buf, NAK_LIMIT, self.millis)?;
         Ok(len)

@@ -38,6 +38,7 @@ const MAX_PIPES: usize = 8;
 const NAK_LIMIT: usize = 15;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(defmt::Format)]
 #[allow(unused)]
 pub(crate) enum PipeErr {
     ShortPacket,
@@ -389,14 +390,12 @@ impl Pipe<'_, '_> {
                 Ok(false) => continue,
 
                 Err(e) => {
+                    trace!("Pipe Error: {:?}", e);
                     last_err = e;
                     match last_err {
                         PipeErr::DataToggle => self.dtgl(ep, token),
 
-                        // Flow error on interrupt pipes means we got
-                        // a NAK, which in this context means there's
-                        // no data. cf §32.8.7.5 of SAM D21 data
-                        // sheet.
+                        // Flow error on interrupt pipes means we got a NAK = no data
                         PipeErr::Flow if ep.transfer_type() == TransferType::Interrupt => break,
 
                         PipeErr::Stall => break,
@@ -427,8 +426,7 @@ impl Pipe<'_, '_> {
                 self.regs.statusset.write(|w| w.bk0rdy().set_bit());
 
                 // Toggles should be 1 for host and function's
-                // sequence at end of setup transaction. cf §8.6.1 of
-                // USB 2.0.
+                // sequence at end of setup transaction. cf §8.6.1 of USB 2.0.
                 self.dtgl_clear();
                 ep.set_in_toggle(true);
                 ep.set_out_toggle(true);
@@ -461,21 +459,13 @@ impl Pipe<'_, '_> {
             self.regs.statusset.write(|w| w.pfreeze().set_bit());
             Ok(true)
         } else if self.desc.bank0.status_bk.read().errorflow().bit_is_set() {
-            trace!("errorflow");
-
             Err(PipeErr::Flow)
         } else if self.desc.bank0.status_pipe.read().touter().bit_is_set() {
-            trace!("touter");
-
             Err(PipeErr::HWTimeout)
         } else if self.desc.bank0.status_pipe.read().dtgler().bit_is_set() {
-            trace!("dtgler");
-
             Err(PipeErr::DataToggle)
         } else if self.regs.intflag.read().trfail().bit_is_set() {
             self.regs.intflag.write(|w| w.trfail().set_bit());
-            trace!("trfail");
-
             Err(PipeErr::TransferFail)
         } else {
             // Nothing wrong, but not done yet.
